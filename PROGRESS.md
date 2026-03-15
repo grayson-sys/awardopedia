@@ -30,7 +30,7 @@ Overall status: 2% complete
 - [ ] Step 6: Trust Layer
 
 ## Key Values
-DO_TOKEN: stored-in-env-only (from memory/2026-03-08.md)
+DO_TOKEN: stored in .env only — see memory/2026-03-08.md
 CLOUDFLARE_API_TOKEN: NEEDED — not found in environment or config
 CLOUDFLARE_ZONE_ID: pending Step 0A
 DO_DB_ID: pending Step 0B
