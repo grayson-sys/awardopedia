@@ -1,0 +1,8 @@
+.env
+node_modules/
+dist/
+*.pyc
+__pycache__/
+ingestion_progress.json
+*.log
+.DS_Store
