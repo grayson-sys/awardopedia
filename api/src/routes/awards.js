@@ -1,0 +1,28 @@
+import { Router } from 'express';
+import { searchAwards, getAwardById, getRelatedAwards } from '../db/queries.js';
+
+const router = Router();
+
+router.get('/', async (req, res) => {
+  try {
+    const result = await searchAwards(req.query);
+    res.json(result);
+  } catch (err) {
+    console.error('Awards search error:', err.message);
+    res.status(500).json({ error: 'Failed to search awards' });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const award = await getAwardById(req.params.id);
+    if (!award) return res.status(404).json({ error: 'Award not found' });
+    const related = await getRelatedAwards(award);
+    res.json({ award, related });
+  } catch (err) {
+    console.error('Award detail error:', err.message);
+    res.status(500).json({ error: 'Failed to get award' });
+  }
+});
+
+export default router;
