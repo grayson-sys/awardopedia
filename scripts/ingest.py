@@ -100,10 +100,11 @@ def psc_to_sector(psc_code: str | None, naics_code: str | None) -> str:
 
 FIELDS = [
     "Award ID", "Recipient Name", "Recipient UEI",
-    "Start Date", "End Date", "Award Amount",
+    "Action Date", "Start Date", "End Date", "Award Amount",
     "Awarding Agency", "Awarding Sub Agency", "Funding Agency",
     "NAICS Code", "NAICS Description", "PSC Code", "PSC Description",
     "Award Description", "Award Type",
+    "Recipient State Code", "Recipient City Name",
     "Place of Performance State Code", "Place of Performance State",
     "Place of Performance County Code", "Place of Performance County Name",
     "Place of Performance City Name", "Place of Performance Zip5",
@@ -182,9 +183,12 @@ def map_row(r: dict, fetched_at: str) -> dict:
         "recipient_name":                 r.get("Recipient Name"),
         "recipient_uei":                  r.get("Recipient UEI"),
         "recipient_duns":                 r.get("Recipient DUNS"),
+        "recipient_state":                r.get("Recipient State Code"),
+        "recipient_city":                 r.get("Recipient City Name"),
         # Amounts
         "federal_action_obligation":      r.get("Award Amount") or 0,
         # Dates
+        "action_date":                    r.get("Action Date"),
         "period_of_performance_start":    r.get("Start Date"),
         "period_of_performance_current_end": r.get("End Date"),
         # Agency
@@ -225,9 +229,9 @@ def map_row(r: dict, fetched_at: str) -> dict:
 UPSERT_SQL = """
 INSERT INTO awards (
   award_id_piid, usaspending_id, usaspending_url,
-  recipient_name, recipient_uei, recipient_duns,
+  recipient_name, recipient_uei, recipient_duns, recipient_state, recipient_city,
   federal_action_obligation,
-  period_of_performance_start, period_of_performance_current_end,
+  action_date, period_of_performance_start, period_of_performance_current_end,
   agency_name, sub_agency_name,
   naics_code, naics_description, psc_code, psc_description,
   contract_type, sector_slug,
@@ -240,6 +244,8 @@ INSERT INTO awards (
 ) VALUES %s
 ON CONFLICT (usaspending_id) DO UPDATE SET
   recipient_name                   = EXCLUDED.recipient_name,
+  recipient_state                  = COALESCE(EXCLUDED.recipient_state, awards.recipient_state),
+  action_date                      = COALESCE(EXCLUDED.action_date, awards.action_date),
   federal_action_obligation        = EXCLUDED.federal_action_obligation,
   period_of_performance_current_end = EXCLUDED.period_of_performance_current_end,
   description                      = COALESCE(EXCLUDED.description, awards.description),
@@ -257,9 +263,9 @@ ON CONFLICT (usaspending_id) DO UPDATE SET
 
 COLUMNS = [
   "award_id_piid","usaspending_id","usaspending_url",
-  "recipient_name","recipient_uei","recipient_duns",
+  "recipient_name","recipient_uei","recipient_duns","recipient_state","recipient_city",
   "federal_action_obligation",
-  "period_of_performance_start","period_of_performance_current_end",
+  "action_date","period_of_performance_start","period_of_performance_current_end",
   "agency_name","sub_agency_name",
   "naics_code","naics_description","psc_code","psc_description",
   "contract_type","sector_slug",
