@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw, Printer } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -47,6 +47,16 @@ export default function AwardDetailClient({ awardId, isEnriched }) {
 
   return (
     <>
+      {/* Print button */}
+      <div className="no-print" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 100 }}>
+        <button
+          onClick={() => window.print()}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--color-navy)", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: "var(--font-size-sm)", fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 12px rgba(0,0,0,0.2)" }}
+        >
+          <Printer size={15} /> Print Brief
+        </button>
+      </div>
+
       {/* Enrichment status */}
       {enriching && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginBottom: "var(--space-4)" }}>

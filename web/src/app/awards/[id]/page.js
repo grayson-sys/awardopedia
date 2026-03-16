@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Building2, MapPin, ExternalLink, Printer } from "lucide-react";
+import { Building2, MapPin, ExternalLink } from "lucide-react";
 import AwardDetailClient from "./AwardDetailClient";
 import TrustBox from "@/components/TrustBox";
 import ContractCard from "@/components/ContractCard";
 import { getAward } from "@/lib/api";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toTitleCase, sectorLabels } from "@/lib/format";
 
 export const dynamic = 'force-dynamic';
 
@@ -72,13 +72,18 @@ export async function generateMetadata({ params }) {
   const { id } = await params;
   try {
     const { award } = await getAward(id);
-    const name = award.recipient_name || "Unknown Contractor";
-    const agency = award.agency_name || "Federal Agency";
+    const name = toTitleCase(award.recipient_name) || "Unknown Contractor";
+    const agency = toTitleCase(award.agency_name) || "Federal Agency";
     const value = formatCurrency(award.federal_action_obligation);
-    const naics = award.naics_description ? ` — ${award.naics_description}` : "";
+    const naics = award.naics_description ? ` — ${toTitleCase(award.naics_description)}` : "";
+    const piid = award.award_id_piid || "";
     return {
-      title: `${name} | ${agency} | ${value}`,
-      description: `Federal contract ${award.award_id_piid}: ${agency} awarded ${value} to ${name}${naics}. View competition details, subawards, executive compensation, and more.`,
+      title: `${name} — ${value} ${agency} Contract | Awardopedia`,
+      description: `${agency} awarded ${value} to ${name} under contract ${piid}${naics}. Free access to competition details, subawards, executive compensation, and solicitation history.`,
+      openGraph: {
+        title: `${name} — ${value} Federal Contract`,
+        description: `${agency} contract awarded to ${name}: ${value} obligated${naics}. Full contract intelligence, free.`,
+      },
     };
   } catch {
     return { title: "Contract Detail — Awardopedia" };
@@ -108,6 +113,24 @@ export default async function AwardDetailPage({ params }) {
   const days = daysRemaining(award.period_of_performance_current_end);
   const garbageDesc = isGarbageDescription(award.description);
   const piid = award.award_id_piid;
+
+  // Normalize all ALL-CAPS government text to readable title case
+  const tc = toTitleCase;
+  const recipientName   = tc(award.recipient_name);
+  const agencyName      = tc(award.agency_name);
+  const subAgencyName   = tc(award.sub_agency_name);
+  const officeName      = tc(award.office_name);
+  const naicsDesc       = tc(award.naics_description);
+  const pscDesc         = tc(award.psc_description);
+  const competitionType = tc(award.competition_type);
+  const pricingType     = tc(award.pricing_type);
+  const setAsideType    = award.set_aside_type && !award.set_aside_type.match(/^NO SET ASIDE/i) ? tc(award.set_aside_type) : "None";
+  const sectorLabel     = award.sector_slug && award.sector_slug !== "other"
+    ? (sectorLabels()[award.sector_slug] || tc(award.sector_slug.replace(/-/g, ' ')))
+    : null;
+  const execOfficers    = (award.executive_officers || []).map(o => ({
+    ...o, name: tc(o.name.replace(/\s+/g, ' ').trim())
+  }));
 
   // External links
   const usaspendingUrl = award.usaspending_url || (award.usaspending_id ? `https://www.usaspending.gov/award/${award.usaspending_id}/` : null);
@@ -158,16 +181,14 @@ export default async function AwardDetailPage({ params }) {
               color: status === "active" ? (days <= 90 ? "#92400E" : "#166534") : "#6B7280",
             }}>{statusText}</span>
           )}
-          <button className="no-print" onClick={undefined} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: "var(--font-size-sm)", color: "var(--color-muted)", background: "none", border: "1px solid var(--color-border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
-            <Printer size={14} /> Print
-          </button>
+          {/* Print button handled in AwardDetailClient (needs window.print) */}
         </div>
         <h1 style={{ fontSize: "var(--font-size-2xl)", fontWeight: "var(--font-weight-medium)", lineHeight: 1.2, marginBottom: "var(--space-1)" }}>
-          {award.recipient_name || "Unknown Contractor"}
+          {recipientName || "Unknown Contractor"}
         </h1>
         <div style={{ fontSize: "var(--font-size-base)", color: "var(--color-muted)" }}>
-          {award.agency_name}{award.sub_agency_name && award.sub_agency_name !== award.agency_name ? ` / ${award.sub_agency_name}` : ""}
-          {award.naics_description ? ` — ${award.naics_description}` : ""}
+          {agencyName}{subAgencyName && subAgencyName !== agencyName ? ` / ${subAgencyName}` : ""}
+          {naicsDesc ? ` — ${naicsDesc}` : ""}
         </div>
       </div>
 
@@ -202,19 +223,19 @@ export default async function AwardDetailPage({ params }) {
           {/* Classification */}
           <Section title="Classification">
             {award.naics_code && <Row label="NAICS Code">
-              <Link href={`/naics/${award.naics_code}`} style={{ color: "var(--color-navy)" }}>{award.naics_code} — {award.naics_description || "—"}</Link>
+              <Link href={`/naics/${award.naics_code}`} style={{ color: "var(--color-navy)" }}>{award.naics_code} — {naicsDesc || "—"}</Link>
             </Row>}
-            {award.psc_code && <Row label="Product / Service Code" value={`${award.psc_code}${award.psc_description ? ` — ${award.psc_description}` : ""}`} />}
-            {award.sector_slug && <Row label="Sector"><Link href={`/sectors/${award.sector_slug}`} style={{ color: "var(--color-navy)", textTransform: "capitalize" }}>{award.sector_slug.replace(/-/g, " ")}</Link></Row>}
+            {award.psc_code && <Row label="Product / Service Code" value={`${award.psc_code}${pscDesc ? ` — ${pscDesc}` : ""}`} />}
+            {sectorLabel && <Row label="Sector"><Link href={`/sectors/${award.sector_slug}`} style={{ color: "var(--color-navy)" }}>{sectorLabel}</Link></Row>}
           </Section>
 
           {/* Competition & Procurement */}
           <Section title="Competition & Procurement">
-            <Row label="Competition" value={award.competition_type || award.extent_competed} />
+            <Row label="Competition" value={competitionType || tc(award.extent_competed)} />
             <Row label="Offers Received" value={award.number_of_offers != null ? `${award.number_of_offers} offer${award.number_of_offers !== 1 ? "s" : ""}` : null} />
-            <Row label="Pricing Type" value={award.pricing_type} />
-            <Row label="Set-Aside" value={award.set_aside_type && award.set_aside_type !== "NO SET ASIDE USED." && award.set_aside_type !== "NONE" ? award.set_aside_type : "None"} />
-            <Row label="Contract Type" value={award.contract_type} />
+            <Row label="Pricing Type" value={pricingType} />
+            <Row label="Set-Aside" value={setAsideType} />
+            <Row label="Contract Type" value={tc(award.contract_type)} />
             {award.solicitation_id && (
               <Row label="Solicitation ID">
                 <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{award.solicitation_id}</span>
@@ -236,14 +257,14 @@ export default async function AwardDetailPage({ params }) {
           )}
 
           {/* Executive Compensation */}
-          {award.executive_officers?.length > 0 && (
+          {execOfficers.length > 0 && (
             <Section title="Executive Compensation (Disclosed)">
               <p style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginBottom: "var(--space-3)" }}>
                 Federal law requires contractors over $25M to disclose their five highest-paid executives.
               </p>
               <table style={{ width: "100%", fontSize: "var(--font-size-sm)", borderCollapse: "collapse" }}>
                 <tbody>
-                  {award.executive_officers.map((o, i) => (
+                  {execOfficers.map((o, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid var(--color-border)" }}>
                       <td style={{ padding: "6px 0", color: "var(--color-text)" }}>{o.name}</td>
                       <td style={{ padding: "6px 0", textAlign: "right", fontFamily: "var(--font-mono, monospace)", color: "var(--color-navy)" }}>{formatCurrency(o.amount)}</td>
@@ -281,15 +302,15 @@ export default async function AwardDetailPage({ params }) {
               <Building2 size={15} style={{ color: "var(--color-navy)", flexShrink: 0, marginTop: 2 }} />
               <div>
                 {award.agency_code ? (
-                  <Link href={`/agencies/${award.agency_code}`} style={{ fontWeight: "var(--font-weight-medium)", color: "var(--color-navy)", fontSize: "var(--font-size-sm)" }}>{award.agency_name}</Link>
+                  <Link href={`/agencies/${award.agency_code}`} style={{ fontWeight: "var(--font-weight-medium)", color: "var(--color-navy)", fontSize: "var(--font-size-sm)" }}>{agencyName}</Link>
                 ) : (
-                  <span style={{ fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-sm)" }}>{award.agency_name || "—"}</span>
+                  <span style={{ fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-sm)" }}>{agencyName || "—"}</span>
                 )}
-                {award.sub_agency_name && award.sub_agency_name !== award.agency_name && (
-                  <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginTop: 2 }}>{award.sub_agency_name}</div>
+                {subAgencyName && subAgencyName !== agencyName && (
+                  <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginTop: 2 }}>{subAgencyName}</div>
                 )}
-                {award.office_name && (
-                  <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginTop: 2 }}>{award.office_name}</div>
+                {officeName && (
+                  <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", marginTop: 2 }}>{officeName}</div>
                 )}
               </div>
             </div>
@@ -300,10 +321,10 @@ export default async function AwardDetailPage({ params }) {
             <div style={{ fontSize: "var(--font-size-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-muted)", marginBottom: "var(--space-3)" }}>Contractor</div>
             {award.recipient_uei ? (
               <Link href={`/contractors/${award.recipient_uei}`} style={{ fontWeight: "var(--font-weight-medium)", color: "var(--color-navy)", fontSize: "var(--font-size-sm)", display: "block", marginBottom: "var(--space-1)" }}>
-                {award.recipient_name}
+                {recipientName}
               </Link>
             ) : (
-              <div style={{ fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-sm)", marginBottom: "var(--space-1)" }}>{award.recipient_name || "—"}</div>
+              <div style={{ fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-sm)", marginBottom: "var(--space-1)" }}>{recipientName || "—"}</div>
             )}
             {award.recipient_uei && (
               <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-muted)", fontFamily: "var(--font-mono, monospace)", marginBottom: "var(--space-2)" }}>UEI: {award.recipient_uei}</div>
@@ -362,6 +383,26 @@ export default async function AwardDetailPage({ params }) {
       )}
 
       <TrustBox sourceUrl={usaspendingUrl} className="no-print" />
+
+      {/* JSON-LD structured data for Google */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "GovernmentService",
+        "name": `${recipientName} — ${agencyName} Contract`,
+        "identifier": piid,
+        "provider": { "@type": "GovernmentOrganization", "name": agencyName },
+        "serviceOperator": { "@type": "Organization", "name": recipientName },
+        "offers": {
+          "@type": "Offer",
+          "price": String(award.federal_action_obligation),
+          "priceCurrency": "USD"
+        },
+        "temporalCoverage": `${award.period_of_performance_start || ""}/${award.period_of_performance_current_end || ""}`,
+        "description": garbageDesc
+          ? `${agencyName} contract awarded to ${recipientName}. NAICS: ${award.naics_code} — ${naicsDesc}. PSC: ${award.psc_code} — ${pscDesc}.`
+          : award.description,
+        "url": `https://awardopedia.com/awards/${id}`,
+      })}} />
     </div>
   );
 }

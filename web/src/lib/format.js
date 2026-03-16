@@ -39,6 +39,26 @@ export function naicsLabel(code, description) {
   return description ? `${code} \u2014 ${description}` : code;
 }
 
+// Converts ALL-CAPS government text to readable Title Case
+// Preserves known acronyms: LLC, DOD, DOE, UEI, NAICS, etc.
+const KEEP_UPPER = new Set(['LLC','LLP','LP','PC','INC','PLLC','DOD','DOE','DOJ','DHS','DOT','VA',
+  'HHS','NASA','FEMA','USDA','EPA','FBI','CIA','NSA','NIH','CDC','CMS','SBA','GSA',
+  'DARPA','DIA','NRO','NGA','DISA','TRICARE','IDIQ','IGCE','NAICS','PSC','UEI','PIID']);
+const KEEP_LOWER = new Set(['a','an','the','and','or','of','in','on','at','to','for','by','with','from','as']);
+
+export function toTitleCase(str) {
+  if (!str) return str;
+  // Normalize: trim, collapse double spaces, replace "- " with " — "
+  const s = str.trim().replace(/\s+/g, ' ').replace(/\s*-\s*/g, ' — ');
+  return s.split(' ').map((word, i) => {
+    const clean = word.replace(/[^A-Za-z]/g, '');
+    const upper = clean.toUpperCase();
+    if (KEEP_UPPER.has(upper)) return word; // keep acronyms as-is (e.g. LLC)
+    if (i > 0 && KEEP_LOWER.has(clean.toLowerCase()) && word === clean) return word.toLowerCase();
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+}
+
 export function truncate(str, n = 80) {
   if (!str) return "";
   return str.length > n ? str.slice(0, n) + "\u2026" : str;
