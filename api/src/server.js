@@ -28,20 +28,32 @@ app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHea
 // ── Health ────────────────────────────────────────────
 app.get('/health',     (_, res) => res.json({ status: 'ok', ts: Date.now() }));
 app.get('/api/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }));
+app.get('/debug-env',  (_, res) => res.json({
+  ROUTE_PREFIX: process.env.ROUTE_PREFIX || '(not set)',
+  DB_URL_TAIL: (process.env.DATABASE_URL || '').slice(-40),
+  NODE_ENV: process.env.NODE_ENV,
+}));
+
+// ── Path normalizer — strips /api prefix if DO App Platform didn't ──────
+// Works correctly whether or not DO strips the /api service prefix
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/') || req.path === '/api') {
+    req.url = req.url.replace(/^\/api/, '') || '/';
+  }
+  next();
+});
 
 // ── Routes ────────────────────────────────────────────
-// Mount under /api so DO App Platform path prefix is preserved
-const prefix = process.env.ROUTE_PREFIX || '';
-app.use(`${prefix}/awards`,      awardsRouter);
-app.use(`${prefix}/agencies`,    agenciesRouter);
-app.use(`${prefix}/naics`,       naicsRouter);
-app.use(`${prefix}/contractors`, contractorsRouter);
-app.use(`${prefix}/expiring`,    expiringRouter);
-app.use(`${prefix}/stats`,       statsRouter);
-app.use(`${prefix}/ai`,          aiRouter);
-app.use(`${prefix}/webhooks`,    webhooksRouter);
-app.use(`${prefix}/users`,      usersRouter);
-app.use(`${prefix}/uploads`,    uploadsRouter);
+app.use('/awards',      awardsRouter);
+app.use('/agencies',    agenciesRouter);
+app.use('/naics',       naicsRouter);
+app.use('/contractors', contractorsRouter);
+app.use('/expiring',    expiringRouter);
+app.use('/stats',       statsRouter);
+app.use('/ai',          aiRouter);
+app.use('/webhooks',    webhooksRouter);
+app.use('/users',       usersRouter);
+app.use('/uploads',     uploadsRouter);
 
 // ── 404 ───────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ error: 'Not found' }));

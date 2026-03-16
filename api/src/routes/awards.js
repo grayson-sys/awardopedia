@@ -8,8 +8,8 @@ router.get('/', async (req, res) => {
     const result = await searchAwards(req.query);
     res.json(result);
   } catch (err) {
-    console.error('Awards search error:', err.message);
-    res.status(500).json({ error: 'Failed to search awards' });
+    console.error('Awards search error:', err.message, err.stack?.split('\n')[1]);
+    res.status(500).json({ error: 'Failed to search awards', detail: err.message });
   }
 });
 
