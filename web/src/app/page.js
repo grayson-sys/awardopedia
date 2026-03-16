@@ -1,26 +1,14 @@
 import Link from "next/link";
-import { DollarSign, FileText, Building2, Clock } from "lucide-react";
 import SearchBar from "@/components/SearchBar";
-import StatCard from "@/components/StatCard";
 import TrustBox from "@/components/TrustBox";
-import { getStats, getAwards } from "@/lib/api";
-import { formatCurrency, formatDateShort } from "@/lib/format";
+import HomeStats from "./HomeStats";
 import RecentAwardsTable from "./RecentAwardsTable";
 
-export const revalidate = 3600;
+// No server-side data fetching — stats + recent awards load client-side
+// to avoid ISR build failures when DO API is mid-deploy
+export const revalidate = 86400;
 
-export default async function Home() {
-  let stats = null;
-  let recent = [];
-  try {
-    [stats, { data: recent }] = await Promise.all([
-      getStats().catch(() => null),
-      getAwards({ sort: "federal_action_obligation", dir: "desc", limit: 10 }).catch(() => ({ data: [] })),
-    ]);
-  } catch {
-    // graceful fallback
-  }
-
+export default function Home() {
   return (
     <>
       <section style={{ padding: "var(--space-16) 0 var(--space-10)", textAlign: "center" }}>
@@ -67,12 +55,7 @@ export default async function Home() {
       </section>
 
       <section className="container" style={{ marginBottom: "var(--space-12)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
-          <StatCard label="Total Awards" value={stats?.total_awards?.toLocaleString() || "\u2014"} subtext="In database" icon={FileText} />
-          <StatCard label="Total Value" value={stats ? formatCurrency(stats.total_value) : "\u2014"} subtext="Federal obligations" icon={DollarSign} />
-          <StatCard label="Agencies" value={stats?.total_agencies?.toLocaleString() || "\u2014"} subtext="Awarding agencies" icon={Building2} />
-          <StatCard label="Expiring Soon" value={stats?.expiring_count?.toLocaleString() || "\u2014"} subtext="Within 180 days" icon={Clock} />
-        </div>
+        <HomeStats />
       </section>
 
       <section className="container" style={{ marginBottom: "var(--space-12)" }}>
@@ -80,7 +63,7 @@ export default async function Home() {
           <h2 style={{ fontSize: "var(--font-size-xl)", fontWeight: "var(--font-weight-medium)" }}>Recent Awards</h2>
           <Link href="/awards" className="btn-secondary" style={{ fontSize: "var(--font-size-sm)" }}>View All</Link>
         </div>
-        <RecentAwardsTable data={recent || []} />
+        <RecentAwardsTable data={[]} clientLoad />
         <TrustBox />
       </section>
     </>

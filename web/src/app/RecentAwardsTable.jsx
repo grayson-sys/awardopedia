@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import DataTable from "@/components/DataTable";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -29,6 +30,17 @@ const columns = [
   },
 ];
 
-export default function RecentAwardsTable({ data }) {
-  return <DataTable columns={columns} data={data} loading={false} />;
+export default function RecentAwardsTable({ data: initialData = [], clientLoad = false }) {
+  const [data, setData] = useState(initialData);
+  const [loading, setLoading] = useState(clientLoad);
+
+  useEffect(() => {
+    if (!clientLoad) return;
+    fetch("/api/awards?sort=federal_action_obligation&dir=desc&limit=10")
+      .then((r) => r.json())
+      .then((d) => { setData(d.data || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [clientLoad]);
+
+  return <DataTable columns={columns} data={data} loading={loading} />;
 }
