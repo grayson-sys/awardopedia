@@ -1,7 +1,7 @@
 import { query } from './connection.js';
 
 // ── Awards ────────────────────────────────────────
-export async function searchAwards({ q, agency, state, dateFrom, dateTo, minValue, maxValue, type, naics, sort = 'action_date', dir = 'desc', page = 1, limit = 25 }) {
+export async function searchAwards({ q, agency, state, dateFrom, dateTo, minValue, maxValue, type, naics, sort = 'federal_action_obligation', dir = 'desc', page = 1, limit = 25 }) {
   const conditions = [];
   const params = [];
   let idx = 1;

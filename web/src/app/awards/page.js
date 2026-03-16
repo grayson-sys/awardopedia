@@ -22,7 +22,7 @@ function AwardsInner() {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState("action_date");
+  const [sortKey, setSortKey] = useState('federal_action_obligation');
   const [sortDir, setSortDir] = useState("desc");
 
   const fetchData = useCallback(() => {

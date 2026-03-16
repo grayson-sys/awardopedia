@@ -15,7 +15,7 @@ export default async function Home() {
   try {
     [stats, { data: recent }] = await Promise.all([
       getStats().catch(() => null),
-      getAwards({ sort: "date", limit: 10 }).catch(() => ({ data: [] })),
+      getAwards({ sort: "federal_action_obligation", dir: "desc", limit: 10 }).catch(() => ({ data: [] })),
     ]);
   } catch {
     // graceful fallback
