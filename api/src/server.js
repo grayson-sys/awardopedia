@@ -12,7 +12,8 @@ import statsRouter       from './routes/stats.js';
 import aiRouter          from './routes/ai.js';
 import webhooksRouter    from './routes/webhooks.js';
 import usersRouter       from './routes/users.js';
-import uploadsRouter     from './routes/uploads.js';
+// uploadsRouter disabled until DO Spaces keys are configured
+// import uploadsRouter     from './routes/uploads.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -53,7 +54,7 @@ app.use('/stats',       statsRouter);
 app.use('/ai',          aiRouter);
 app.use('/webhooks',    webhooksRouter);
 app.use('/users',       usersRouter);
-app.use('/uploads',     uploadsRouter);
+// app.use('/uploads',  uploadsRouter);  // re-enable after DO Spaces setup
 
 // ── 404 ───────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ error: 'Not found' }));

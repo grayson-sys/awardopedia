@@ -1,8 +1,10 @@
 import pg from 'pg';
 
+// DO Managed PostgreSQL uses self-signed certs — strip sslmode param, handle via ssl option
+const connStr = (process.env.DATABASE_URL || '').replace(/[?&]sslmode=[^&]*/g, '');
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: connStr,
+  ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
