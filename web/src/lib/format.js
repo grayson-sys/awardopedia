@@ -41,7 +41,7 @@ export function naicsLabel(code, description) {
 
 // Converts ALL-CAPS government text to readable Title Case
 // Preserves known acronyms: LLC, DOD, DOE, UEI, NAICS, etc.
-const KEEP_UPPER = new Set(['LLC','LLP','LP','PC','INC','PLLC','DOD','DOE','DOJ','DHS','DOT','VA',
+const KEEP_UPPER = new Set(['LLC','LLP','LP','PC','PLLC','DOD','DOE','DOJ','DHS','DOT','VA',
   'HHS','NASA','FEMA','USDA','EPA','FBI','CIA','NSA','NIH','CDC','CMS','SBA','GSA',
   'DARPA','DIA','NRO','NGA','DISA','TRICARE','IDIQ','IGCE','NAICS','PSC','UEI','PIID']);
 const KEEP_LOWER = new Set(['a','an','the','and','or','of','in','on','at','to','for','by','with','from','as']);
@@ -55,6 +55,17 @@ export function toTitleCase(str) {
     const upper = clean.toUpperCase();
     if (KEEP_UPPER.has(upper)) return word; // keep acronyms as-is (e.g. LLC)
     if (i > 0 && KEEP_LOWER.has(clean.toLowerCase()) && word === clean) return word.toLowerCase();
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+// Title case for addresses — keeps 2-letter tokens uppercase (state codes, directionals)
+export function toTitleCaseAddress(str) {
+  if (!str) return str;
+  return str.trim().replace(/\s+/g, ' ').split(' ').map(word => {
+    const clean = word.replace(/[^A-Za-z]/g, '');
+    if (clean.length <= 2 && clean === clean.toUpperCase()) return word; // KY, W, NW, etc.
+    if (KEEP_UPPER.has(clean.toUpperCase())) return word;
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }).join(' ');
 }

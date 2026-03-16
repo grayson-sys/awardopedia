@@ -4,7 +4,7 @@ import AwardDetailClient from "./AwardDetailClient";
 import TrustBox from "@/components/TrustBox";
 import ContractCard from "@/components/ContractCard";
 import { getAward } from "@/lib/api";
-import { formatCurrency, formatDate, toTitleCase, sectorLabels } from "@/lib/format";
+import { formatCurrency, formatDate, toTitleCase, toTitleCaseAddress, sectorLabels } from "@/lib/format";
 
 export const dynamic = 'force-dynamic';
 
@@ -332,7 +332,7 @@ export default async function AwardDetailPage({ params }) {
             {award.recipient_address && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 4, fontSize: "var(--font-size-xs)", color: "var(--color-muted)" }}>
                 <MapPin size={11} style={{ flexShrink: 0, marginTop: 2 }} />
-                <span>{award.recipient_address}</span>
+                <span>{toTitleCaseAddress(award.recipient_address)}</span>
               </div>
             )}
             {award.congressional_district && (
