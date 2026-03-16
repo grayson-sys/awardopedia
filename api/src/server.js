@@ -13,6 +13,7 @@ import aiRouter          from './routes/ai.js';
 import webhooksRouter    from './routes/webhooks.js';
 import usersRouter       from './routes/users.js';
 import geoRouter         from './routes/geo.js';
+import geoRouter         from './routes/geo.js';
 // uploadsRouter disabled until DO Spaces keys are configured
 // import uploadsRouter     from './routes/uploads.js';
 
@@ -55,6 +56,7 @@ app.use('/stats',       statsRouter);
 app.use('/ai',          aiRouter);
 app.use('/webhooks',    webhooksRouter);
 app.use('/users',       usersRouter);
+app.use('/geo',         geoRouter);
 app.use('/geo',         geoRouter);
 // app.use('/uploads',  uploadsRouter);  // re-enable after DO Spaces setup
 

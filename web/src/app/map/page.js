@@ -1,10 +1,23 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { formatCurrency } from "@/lib/format";
 
-import "leaflet/dist/leaflet.css";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { formatCurrency, stateNames } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+// State name → 2-letter postal code (GeoJSON only has names)
+const NAME_TO_ABBR = {
+  "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA",
+  "Colorado":"CO","Connecticut":"CT","Delaware":"DE","Florida":"FL","Georgia":"GA",
+  "Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA",
+  "Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD",
+  "Massachusetts":"MA","Michigan":"MI","Minnesota":"MN","Mississippi":"MS",
+  "Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH",
+  "New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC",
+  "North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA",
+  "Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN",
+  "Texas":"TX","Utah":"UT","Vermont":"VT","Virginia":"VA","Washington":"WA",
+  "West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY","District of Columbia":"DC",
+  "Puerto Rico":"PR",
+};
 
 const SECTORS = [
   { value: "", label: "All Sectors" },
@@ -12,371 +25,244 @@ const SECTORS = [
   { value: "technology", label: "Technology" },
   { value: "healthcare", label: "Healthcare" },
   { value: "construction", label: "Construction" },
-  { value: "professional", label: "Professional Services" },
+  { value: "professional-services", label: "Professional Services" },
   { value: "energy", label: "Energy" },
-  { value: "transportation", label: "Logistics" },
-  { value: "education", label: "Research" },
-  { value: "agriculture", label: "Environment" },
-  { value: "finance", label: "Financial" },
-  { value: "manufacturing", label: "Other" },
+  { value: "logistics", label: "Logistics" },
+  { value: "research", label: "Research" },
 ];
 
 function getColor(v) {
   if (!v || v <= 0) return "#f0f0f0";
   if (v > 200e9) return "#1B3A6B";
-  if (v > 50e9) return "#2D5BA0";
-  if (v > 10e9) return "#D4940A";
-  if (v > 1e9) return "#E8B84B";
+  if (v > 50e9)  return "#2D5BA0";
+  if (v > 10e9)  return "#D4940A";
+  if (v > 1e9)   return "#E8B84B";
   return "#FDF3D8";
 }
 
-// Reverse lookup: full state name → 2-letter code
-const NAME_TO_CODE = Object.fromEntries(
-  Object.entries(stateNames()).map(([code, name]) => [name, code])
-);
+const LEGEND = [
+  ["#1B3A6B", ">$200B"], ["#2D5BA0", "$50–200B"], ["#D4940A", "$10–50B"],
+  ["#E8B84B", "$1–10B"], ["#FDF3D8", "<$1B"], ["#f0f0f0", "No data"],
+];
 
 export default function MapPage() {
-  const mapRef = useRef(null);
-  const mapInstance = useRef(null);
-  const geoLayer = useRef(null);
-  const [sector, setSector] = useState("");
-  const [stateData, setStateData] = useState({});
-  const [selected, setSelected] = useState(null); // { code, name, total, count, awards }
-  const [loading, setLoading] = useState(true);
+  const mapRef      = useRef(null);
+  const leafletMap  = useRef(null);
+  const geoLayer    = useRef(null);
+  const spendingRef = useRef({});
 
-  // Fetch aggregate state data
-  const fetchStates = useCallback(async (sectorVal) => {
-    setLoading(true);
-    try {
-      const url = sectorVal
-        ? `${API}/geo/spend?sector=${sectorVal}`
-        : `${API}/geo/spend`;
-      const res = await fetch(url);
-      const json = await res.json();
+  const [spending,     setSpending]     = useState({});   // { CA: { award_count, total_awarded } }
+  const [selected,     setSelected]     = useState(null); // { abbr, name, ...spending }
+  const [stateAwards,  setStateAwards]  = useState([]);
+  const [loadingAwards,setLoadingAwards]= useState(false);
+  const [sector,       setSector]       = useState("");
+
+  // Keep ref in sync so Leaflet event handlers always see latest state
+  useEffect(() => { spendingRef.current = spending; }, [spending]);
+
+  // Fetch state aggregates when sector changes
+  useEffect(() => {
+    const url = `/api/geo/spend${sector ? `?sector=${sector}` : ""}`;
+    fetch(url).then(r => r.json()).then(d => {
       const map = {};
-      (json.states || []).forEach((s) => {
-        map[s.state_code] = { total: s.total_awarded, count: s.award_count };
-      });
-      setStateData(map);
-    } catch (e) {
-      console.error("Failed to fetch geo data", e);
-    } finally {
-      setLoading(false);
+      (d.states || []).forEach(s => { map[s.state_code] = s; });
+      setSpending(map);
+    }).catch(() => {});
+  }, [sector]);
+
+  // Init map once
+  useEffect(() => {
+    if (!mapRef.current || leafletMap.current) return;
+    // Load leaflet CSS dynamically
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
     }
+    import("leaflet").then(({ default: L }) => {
+      // Fix Leaflet default icon issue with webpack
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({ iconRetinaUrl: "", iconUrl: "", shadowUrl: "" });
+
+      const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: true });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        opacity: 0.25,
+      }).addTo(map);
+      map.setView([39, -96], 4);
+      leafletMap.current = map;
+    });
+    return () => {
+      if (leafletMap.current) { leafletMap.current.remove(); leafletMap.current = null; }
+    };
   }, []);
 
-  // Fetch state detail (top 25 awards)
-  const fetchDetail = useCallback(async (code, name, sectorVal) => {
-    try {
-      const url = sectorVal
-        ? `${API}/geo/spend?state=${code}&sector=${sectorVal}`
-        : `${API}/geo/spend?state=${code}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const total = (json.awards || []).reduce(
-        (s, a) => s + (a.federal_action_obligation || 0),
-        0
-      );
-      setSelected({
-        code,
-        name,
-        total: stateData[code]?.total || total,
-        count: stateData[code]?.count || json.awards?.length || 0,
-        awards: json.awards || [],
-      });
-    } catch (e) {
-      console.error("Failed to fetch state detail", e);
-    }
-  }, [stateData]);
-
-  // Init map
+  // Rebuild choropleth when spending data or map changes
   useEffect(() => {
-    if (mapInstance.current) return;
-    let cancelled = false;
-
-    (async () => {
-      const L = (await import("leaflet")).default;
-      if (cancelled || mapInstance.current) return;
-
-      const map = L.map(mapRef.current, {
-        center: [39, -96],
-        zoom: 4,
-        zoomControl: true,
-        scrollWheelZoom: true,
+    if (!leafletMap.current || Object.keys(spending).length === 0) return;
+    import("leaflet").then(({ default: L }) => {
+      if (geoLayer.current) geoLayer.current.remove();
+      fetch("/geo/us-states.json").then(r => r.json()).then(geojson => {
+        const layer = L.geoJSON(geojson, {
+          style: feature => {
+            const abbr = NAME_TO_ABBR[feature.properties.name];
+            const s = spendingRef.current[abbr];
+            return {
+              fillColor: getColor(s?.total_awarded),
+              fillOpacity: 0.78,
+              color: "#fff",
+              weight: 1.2,
+            };
+          },
+          onEachFeature: (feature, lyr) => {
+            const name = feature.properties.name;
+            const abbr = NAME_TO_ABBR[name];
+            const s = spendingRef.current[abbr];
+            lyr.bindTooltip(
+              `<strong>${name}</strong><br/>${s
+                ? formatCurrency(s.total_awarded) + " — " + s.award_count?.toLocaleString() + " awards"
+                : "No data"}`,
+              { sticky: true, className: "map-tooltip" }
+            );
+            lyr.on("click", () => {
+              if (!abbr) return;
+              setSelected({ abbr, name, ...(spendingRef.current[abbr] || {}) });
+              setLoadingAwards(true);
+              const url = `/api/geo/spend?state=${abbr}${sector ? "&sector=" + sector : ""}`;
+              fetch(url).then(r => r.json())
+                .then(d => { setStateAwards(d.awards || []); setLoadingAwards(false); })
+                .catch(() => setLoadingAwards(false));
+            });
+          },
+        }).addTo(leafletMap.current);
+        geoLayer.current = layer;
       });
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        opacity: 0.3,
-        attribution: "&copy; OpenStreetMap contributors",
-      }).addTo(map);
-
-      mapInstance.current = map;
-
-      // Load GeoJSON
-      const geoRes = await fetch("/geo/us-states.json");
-      const geoJson = await geoRes.json();
-      geoLayer.current = L.geoJSON(geoJson, {
-        style: () => ({
-          fillColor: "#f0f0f0",
-          weight: 1,
-          color: "#999",
-          fillOpacity: 0.8,
-        }),
-        onEachFeature: (feature, layer) => {
-          const name = feature.properties.name;
-          const code = NAME_TO_CODE[name];
-          layer._stateCode = code;
-          layer._stateName = name;
-          layer.on("click", () => {
-            if (code) {
-              window.__mapClickState = { code, name };
-              window.dispatchEvent(new Event("map-state-click"));
-            }
-          });
-          layer.on("mouseover", (e) => {
-            e.target.setStyle({ weight: 2, color: "#333" });
-          });
-          layer.on("mouseout", (e) => {
-            geoLayer.current.resetStyle(e.target);
-          });
-        },
-      }).addTo(map);
-
-      fetchStates("");
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchStates]);
-
-  // Listen for state clicks (bridge DOM events to React state)
-  useEffect(() => {
-    const handler = () => {
-      const { code, name } = window.__mapClickState || {};
-      if (code) fetchDetail(code, name, sector);
-    };
-    window.addEventListener("map-state-click", handler);
-    return () => window.removeEventListener("map-state-click", handler);
-  }, [fetchDetail, sector]);
-
-  // Update choropleth colors when data changes
-  useEffect(() => {
-    if (!geoLayer.current) return;
-    geoLayer.current.eachLayer((layer) => {
-      const code = layer._stateCode;
-      const val = stateData[code]?.total || 0;
-      layer.setStyle({
-        fillColor: getColor(val),
-        weight: 1,
-        color: "#999",
-        fillOpacity: 0.8,
-      });
-      const display = val
-        ? `${layer._stateName}: ${formatCurrency(val)}`
-        : layer._stateName;
-      layer.bindTooltip(display, { sticky: true });
     });
-  }, [stateData]);
-
-  // Sector change
-  const onSectorChange = (e) => {
-    const val = e.target.value;
-    setSector(val);
-    setSelected(null);
-    fetchStates(val);
-  };
+  }, [spending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{ display: "flex", height: "calc(100vh - 60px)", position: "relative" }}>
-      {/* Map */}
-      <div style={{ flex: 1, position: "relative" }}>
-        <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
-
+    <div style={{ display: "flex", height: "calc(100vh - 62px)", overflow: "hidden" }}>
+      {/* ── Map ─────────────────────────────────────────── */}
+      <div ref={mapRef} style={{ flex: 1, position: "relative" }}>
         {/* Sector filter */}
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 60,
-            zIndex: 1000,
-            background: "#fff",
-            borderRadius: 6,
-            padding: "6px 10px",
-            boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-          }}
-        >
+        <div style={{
+          position: "absolute", top: 12, left: 12, zIndex: 1000,
+          background: "#fff", borderRadius: 8, padding: "8px 12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        }}>
           <select
             value={sector}
-            onChange={onSectorChange}
-            style={{
-              border: "none",
-              outline: "none",
-              fontSize: 14,
-              cursor: "pointer",
-              background: "transparent",
-            }}
+            onChange={e => setSector(e.target.value)}
+            style={{ border: "none", outline: "none", fontSize: "var(--font-size-sm)", color: "var(--color-navy)", background: "transparent", cursor: "pointer", minWidth: 160 }}
           >
-            {SECTORS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
+            {SECTORS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </div>
 
         {/* Legend */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: 30,
-            left: 12,
-            zIndex: 1000,
-            background: "#fff",
-            borderRadius: 6,
-            padding: "10px 14px",
-            boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-            fontSize: 12,
-          }}
-        >
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Total Awarded</div>
-          {[
-            { color: "#1B3A6B", label: "> $200B" },
-            { color: "#2D5BA0", label: "$50B – $200B" },
-            { color: "#D4940A", label: "$10B – $50B" },
-            { color: "#E8B84B", label: "$1B – $10B" },
-            { color: "#FDF3D8", label: "< $1B" },
-            { color: "#f0f0f0", label: "No data" },
-          ].map((item) => (
-            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 16,
-                  height: 12,
-                  background: item.color,
-                  border: "1px solid #ccc",
-                  borderRadius: 2,
-                }}
-              />
-              <span>{item.label}</span>
+        <div style={{
+          position: "absolute", bottom: 28, left: 12, zIndex: 1000,
+          background: "#fff", borderRadius: 8, padding: "10px 14px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)", fontSize: "0.75rem",
+        }}>
+          <div style={{ fontWeight: 600, color: "var(--color-navy)", marginBottom: 6 }}>Contract Value</div>
+          {LEGEND.map(([color, label]) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <div style={{ width: 14, height: 14, borderRadius: 3, background: color, border: "1px solid #ddd", flexShrink: 0 }} />
+              <span>{label}</span>
             </div>
           ))}
         </div>
-
-        {loading && (
-          <div
-            style={{
-              position: "absolute",
-              top: 12,
-              right: 12,
-              zIndex: 1000,
-              background: "#fff",
-              borderRadius: 6,
-              padding: "6px 12px",
-              boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-              fontSize: 13,
-            }}
-          >
-            Loading...
-          </div>
-        )}
       </div>
 
-      {/* Sidebar */}
-      <div
-        style={{
-          width: 340,
-          borderLeft: "1px solid #e0e0e0",
-          overflowY: "auto",
-          background: "#fafafa",
-        }}
-      >
-        {!selected ? (
-          <div
-            style={{
-              padding: 32,
-              textAlign: "center",
-              color: "#888",
-              marginTop: 80,
-            }}
-          >
-            <div style={{ fontSize: 40, marginBottom: 12 }}>&#x1F5FA;</div>
-            <p>Click any state to see spending details</p>
-          </div>
-        ) : (
+      {/* ── Sidebar ──────────────────────────────────────── */}
+      <div style={{
+        width: 340, background: "#fff",
+        borderLeft: "1px solid var(--color-border)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        flexShrink: 0,
+      }}>
+        {selected ? (
           <>
-            <div
-              style={{
-                background: "#1B3A6B",
-                color: "#fff",
-                padding: "20px 18px",
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: 20 }}>{selected.name}</h2>
-              <div style={{ marginTop: 8, fontSize: 22, fontWeight: 700 }}>
-                {formatCurrency(selected.total)}
+            {/* Header */}
+            <div style={{ background: "var(--color-navy)", color: "#fff", padding: "16px 20px", flexShrink: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontSize: "1.0625rem", fontWeight: 600, marginBottom: 4 }}>{selected.name}</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700, lineHeight: 1.1 }}>
+                    {selected.total_awarded ? formatCurrency(selected.total_awarded) : "—"}
+                  </div>
+                  <div style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: 4 }}>
+                    {selected.award_count ? selected.award_count.toLocaleString() + " awards" : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setSelected(null); setStateAwards([]); }}
+                  style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: "1.25rem", opacity: 0.7, padding: 0, lineHeight: 1 }}
+                >✕</button>
               </div>
-              <div style={{ marginTop: 4, fontSize: 13, opacity: 0.85 }}>
-                {selected.count.toLocaleString()} awards
-              </div>
-              <a
-                href={`/awards?state=${selected.code}`}
-                style={{
-                  display: "inline-block",
-                  marginTop: 10,
-                  color: "#E8B84B",
-                  fontSize: 13,
-                  textDecoration: "underline",
-                }}
+              <Link
+                href={`/awards?state=${selected.abbr}`}
+                style={{ display: "inline-block", marginTop: 10, fontSize: "0.8125rem", color: "var(--color-amber)", textDecoration: "underline" }}
               >
-                View all {selected.code} awards &rarr;
-              </a>
+                View all {selected.name} awards →
+              </Link>
             </div>
-            <div style={{ padding: "12px 14px" }}>
-              <h3 style={{ fontSize: 14, margin: "0 0 10px", color: "#555" }}>
+
+            {/* Awards list */}
+            <div style={{ flex: 1, overflow: "auto" }}>
+              <div style={{ padding: "10px 16px 4px", fontSize: "0.75rem", fontWeight: 600, color: "var(--color-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Top Contracts
-              </h3>
-              {selected.awards.length === 0 && (
-                <p style={{ color: "#999", fontSize: 13 }}>No contracts found.</p>
-              )}
-              {selected.awards.map((a, i) => (
-                <a
-                  key={a.award_id || i}
-                  href={`/awards/${a.award_id}`}
-                  style={{
-                    display: "block",
-                    padding: "10px 10px",
-                    marginBottom: 6,
-                    background: "#fff",
-                    borderRadius: 6,
-                    border: "1px solid #eee",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "#1B3A6B",
-                      marginBottom: 3,
-                    }}
-                  >
-                    {a.recipient_name || "Unknown Recipient"}
+              </div>
+              {loadingAwards ? (
+                <div style={{ padding: "20px 16px", color: "var(--color-muted)", fontSize: "var(--font-size-sm)" }}>Loading…</div>
+              ) : stateAwards.length === 0 ? (
+                <div style={{ padding: "20px 16px", color: "var(--color-muted)", fontSize: "var(--font-size-sm)" }}>No contracts found</div>
+              ) : stateAwards.map((a, i) => (
+                <div key={i} style={{ padding: "10px 16px", borderBottom: "1px solid var(--color-border)" }}>
+                  <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-navy)", marginBottom: 2, lineHeight: 1.3 }}>
+                    {(a.recipient_name || "—").slice(0, 42)}
                   </div>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
-                    {a.agency_name}
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-muted)", marginBottom: 4 }}>
+                    {(a.agency_name || "").slice(0, 42)}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#D4940A" }}>
+                  <div style={{ fontSize: "0.8125rem", fontFamily: "var(--font-mono, monospace)", color: "var(--color-amber)", fontWeight: 700 }}>
                     {formatCurrency(a.federal_action_obligation)}
                   </div>
-                </a>
+                </div>
               ))}
             </div>
           </>
+        ) : (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, textAlign: "center" }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: 14 }}>🗺️</div>
+            <div style={{ fontSize: "1rem", fontWeight: 600, color: "var(--color-navy)", marginBottom: 8 }}>
+              Click any state
+            </div>
+            <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-muted)", lineHeight: 1.6 }}>
+              See total contract spending and top contracts for each state
+            </div>
+            <div style={{ marginTop: 20, fontSize: "0.75rem", color: "var(--color-muted)" }}>
+              Use the sector filter to narrow by industry
+            </div>
+          </div>
         )}
       </div>
+
+      <style>{`
+        .map-tooltip {
+          background: var(--color-navy) !important;
+          color: #fff !important;
+          border: none !important;
+          border-radius: 6px !important;
+          font-size: 0.8125rem !important;
+          padding: 6px 10px !important;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
+        }
+        .map-tooltip::before { display: none !important; }
+      `}</style>
     </div>
   );
 }
