@@ -3,10 +3,10 @@ import { Building2, MapPin, ExternalLink, Printer } from "lucide-react";
 import AwardDetailClient from "./AwardDetailClient";
 import TrustBox from "@/components/TrustBox";
 import ContractCard from "@/components/ContractCard";
-import { getAward, getAwards } from "@/lib/api";
+import { getAward } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 
-export const revalidate = 86400;
+export const dynamic = 'force-dynamic';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function isGarbageDescription(s) {
@@ -82,15 +82,6 @@ export async function generateMetadata({ params }) {
     };
   } catch {
     return { title: "Contract Detail — Awardopedia" };
-  }
-}
-
-export async function generateStaticParams() {
-  try {
-    const { data } = await getAwards({ sort: "federal_action_obligation", dir: "desc", limit: 2000 });
-    return (data || []).map((a) => ({ id: String(a.award_id) }));
-  } catch {
-    return [];
   }
 }
 

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sparkles, RefreshCw } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function AwardDetailClient({ awardId, isEnriched }) {
+  const router = useRouter();
   const [enriching, setEnriching]   = useState(false);
   const [aiResult,  setAiResult]    = useState(null);
   const [aiLoading, setAiLoading]   = useState(false);
@@ -20,8 +22,7 @@ export default function AwardDetailClient({ awardId, isEnriched }) {
       .then(r => r.json())
       .then(d => {
         if (!cancelled && d.award) {
-          // Reload the page to show enriched data
-          window.location.reload();
+          router.refresh(); // re-fetch server component data without full page reload
         }
       })
       .catch(() => {})
