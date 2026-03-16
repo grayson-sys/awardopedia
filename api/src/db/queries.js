@@ -74,6 +74,103 @@ export async function getAwardById(id) {
   return result.rows[0] || null;
 }
 
+export async function enrichAwardFromUSASpending(id) {
+  // Fetch current record to get usaspending_id
+  const current = await getAwardById(id);
+  if (!current?.usaspending_id) return current;
+
+  // Skip if recently enriched (within 7 days)
+  if (current.enriched_at) {
+    const age = Date.now() - new Date(current.enriched_at).getTime();
+    if (age < 7 * 24 * 60 * 60 * 1000) return current;
+  }
+
+  // Fetch full detail from USASpending
+  let data;
+  try {
+    const url = `https://api.usaspending.gov/api/v2/awards/${encodeURIComponent(current.usaspending_id)}/`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return current;
+    data = await res.json();
+  } catch {
+    return current;
+  }
+
+  const tx = data.latest_transaction_contract_data || {};
+  const recipient = data.recipient || {};
+  const loc = recipient.location || {};
+  const pop = data.place_of_performance || {};
+  const perf = data.period_of_performance || {};
+
+  // Build executive officers array
+  const officers = (data.executive_details?.officers || [])
+    .filter(o => o.name && o.amount)
+    .map(o => ({ name: o.name.trim(), amount: o.amount }));
+
+  // Recipient address
+  const addrParts = [loc.address_line1, loc.city_name, loc.state_code, loc.zip5].filter(Boolean);
+  const recipientAddress = addrParts.join(', ') || null;
+  const congDistrict = loc.state_code && loc.congressional_code
+    ? `${loc.state_code}-${loc.congressional_code}`
+    : null;
+
+  // Description — keep raw gov text
+  const description = (data.description && data.description !== 'IGF::OT::IGF')
+    ? data.description
+    : null;
+
+  await query(`
+    UPDATE awards SET
+      solicitation_id        = COALESCE($2, solicitation_id),
+      number_of_offers       = COALESCE($3, number_of_offers),
+      competition_type       = COALESCE($4, competition_type),
+      extent_competed        = COALESCE($5, extent_competed),
+      pricing_type           = COALESCE($6, pricing_type),
+      subaward_count         = COALESCE($7, subaward_count),
+      subaward_amount        = COALESCE($8, subaward_amount),
+      executive_officers     = COALESCE($9, executive_officers),
+      base_exercised_options = COALESCE($10, base_exercised_options),
+      potential_total_value  = COALESCE($11, potential_total_value),
+      congressional_district = COALESCE($12, congressional_district),
+      recipient_address      = COALESCE($13, recipient_address),
+      naics_code             = COALESCE($14, naics_code),
+      naics_description      = COALESCE($15, naics_description),
+      psc_code               = COALESCE($16, psc_code),
+      psc_description        = COALESCE($17, psc_description),
+      set_aside_type         = COALESCE($18, set_aside_type),
+      description            = COALESCE($19, description),
+      period_of_performance_start       = COALESCE($20, period_of_performance_start),
+      period_of_performance_current_end = COALESCE($21, period_of_performance_current_end),
+      enriched_at            = NOW()
+    WHERE award_id = $1`,
+    [
+      id,
+      tx.solicitation_identifier || null,
+      tx.number_of_offers_received ? parseInt(tx.number_of_offers_received) : null,
+      tx.extent_competed_description || null,
+      tx.extent_competed || null,
+      tx.type_of_contract_pricing_description || null,
+      data.subaward_count ?? null,
+      data.total_subaward_amount ?? null,
+      officers.length ? JSON.stringify(officers) : null,
+      data.base_exercised_options ?? null,
+      data.base_and_all_options ?? null,
+      congDistrict,
+      recipientAddress,
+      tx.naics || null,
+      tx.naics_description || null,
+      tx.product_or_service_code || null,
+      tx.product_or_service_description || null,
+      tx.type_set_aside_description || null,
+      description,
+      perf.start_date || null,
+      perf.end_date || null,
+    ]
+  );
+
+  return await getAwardById(id);
+}
+
 export async function getRelatedAwards(award) {
   if (!award) return [];
   const result = await query(
