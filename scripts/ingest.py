@@ -317,6 +317,14 @@ def run(date_start: str, date_end: str, dry_run: bool = False):
 
         rows = [tuple(map_row(r, fetched_at).get(c) for c in COLUMNS) for r in results]
 
+        # Deduplicate within batch by usaspending_id (index 1) — USASpending
+        # occasionally returns the same award twice in one page during cursor pagination
+        uid_idx = COLUMNS.index("usaspending_id")
+        seen = {}
+        for row in rows:
+            seen[row[uid_idx]] = row
+        rows = list(seen.values())
+
         with conn.cursor() as cur:
             execute_values(cur, UPSERT_SQL, rows)
             conn.commit()
