@@ -51,6 +51,18 @@ export async function getGeoSpend(state, sector) {
   return serverFetch(`/geo-spend?${params.toString()}`);
 }
 
+export async function getSector(slug) {
+  return serverFetch(`/sectors/${slug}`);
+}
+
+export async function getState(code) {
+  return serverFetch(`/states/${code}`);
+}
+
+export async function getStateSector(code, sector) {
+  return serverFetch(`/states/${code}/${sector}`);
+}
+
 export function clientApi(path, options = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("awardopedia_token") : null;
   const headers = { "Content-Type": "application/json", ...options.headers };
