@@ -320,3 +320,23 @@ export async function getCachedAnalysis(awardId, action) {
   );
   return result.rows[0]?.result || null;
 }
+
+// ── Geo / Map ──────────────────────────────────────
+export async function getGeoSpend(state, sector) {
+  if (state) {
+    const params = [state];
+    let where = "WHERE pop_state_code = $1 AND federal_action_obligation > 0";
+    if (sector) { where += " AND sector_slug = $2"; params.push(sector); }
+    const result = await query(
+      `SELECT award_id, award_id_piid, recipient_name, agency_name, federal_action_obligation::float as federal_action_obligation, action_date, sector_slug
+       FROM awards ${where} ORDER BY federal_action_obligation DESC NULLS LAST LIMIT 25`, params);
+    return { awards: result.rows };
+  }
+  const params = [];
+  let where = "WHERE pop_state_code IS NOT NULL AND federal_action_obligation IS NOT NULL";
+  if (sector) { where += " AND sector_slug = $1"; params.push(sector); }
+  const result = await query(
+    `SELECT pop_state_code as state_code, COUNT(*)::int as award_count, SUM(federal_action_obligation::float) as total_awarded
+     FROM awards ${where} GROUP BY pop_state_code ORDER BY total_awarded DESC`, params);
+  return { states: result.rows };
+}
