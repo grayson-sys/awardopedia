@@ -14,6 +14,8 @@ export async function getStats() {
 }
 
 export async function getAwards(params = {}) {
+  // Ensure sort key matches backend allowedSort list
+  if (params.sort === 'date') params.sort = 'action_date';
   const qs = new URLSearchParams(params).toString();
   return serverFetch(`/awards?${qs}`);
 }
