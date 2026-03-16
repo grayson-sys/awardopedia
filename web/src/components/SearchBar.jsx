@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
+"use client";
 
-export default function SearchBar({ initialValue = '', onSearch, placeholder }) {
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
+
+export default function SearchBar({ initialValue = "", onSearch, placeholder }) {
   const [query, setQuery] = useState(initialValue);
-  const navigate = useNavigate();
+  const router = useRouter();
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -13,7 +15,7 @@ export default function SearchBar({ initialValue = '', onSearch, placeholder }) 
     if (onSearch) {
       onSearch(q);
     } else {
-      navigate(`/awards?q=${encodeURIComponent(q)}`);
+      router.push(`/awards?q=${encodeURIComponent(q)}`);
     }
   }
 
@@ -24,7 +26,7 @@ export default function SearchBar({ initialValue = '', onSearch, placeholder }) 
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder || 'Search awards, agencies, contractors...'}
+        placeholder={placeholder || "Search awards, agencies, contractors..."}
         aria-label="Search awards"
       />
       <button className="search-bar__button" type="submit">

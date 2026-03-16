@@ -1,13 +1,15 @@
-import { useState } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
-import SkeletonRow from './SkeletonRow';
+"use client";
+
+import { useState } from "react";
+import { ChevronUp, ChevronDown } from "lucide-react";
+import SkeletonRow from "./SkeletonRow";
 
 export default function DataTable({ columns, data, loading, onSort, sortKey, sortDir, emptyMessage }) {
-  const [localSort, setLocalSort] = useState({ key: sortKey || '', dir: sortDir || 'asc' });
+  const [localSort, setLocalSort] = useState({ key: sortKey || "", dir: sortDir || "asc" });
 
   function handleSort(key) {
     if (!key) return;
-    const newDir = localSort.key === key && localSort.dir === 'asc' ? 'desc' : 'asc';
+    const newDir = localSort.key === key && localSort.dir === "asc" ? "desc" : "asc";
     setLocalSort({ key, dir: newDir });
     if (onSort) onSort(key, newDir);
   }
@@ -16,21 +18,21 @@ export default function DataTable({ columns, data, loading, onSort, sortKey, sor
   const activeDir = sortDir ?? localSort.dir;
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div style={{ overflowX: "auto" }}>
       <table className="data-table">
         <thead>
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`${col.align === 'right' ? 'text-right' : ''} ${activeKey === col.key ? 'sort-active' : ''}`}
+                className={`${col.align === "right" ? "text-right" : ""} ${activeKey === col.key ? "sort-active" : ""}`}
                 onClick={() => col.sortable !== false && handleSort(col.key)}
-                style={{ cursor: col.sortable !== false ? 'pointer' : 'default' }}
+                style={{ cursor: col.sortable !== false ? "pointer" : "default" }}
               >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                   {col.label}
                   {activeKey === col.key && (
-                    activeDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                    activeDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />
                   )}
                 </span>
               </th>
@@ -48,7 +50,7 @@ export default function DataTable({ columns, data, loading, onSort, sortKey, sor
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={col.mono ? 'mono' : col.align === 'right' ? 'text-right' : ''}
+                    className={col.mono ? "mono" : col.align === "right" ? "text-right" : ""}
                   >
                     {col.render ? col.render(row) : row[col.key]}
                   </td>
@@ -58,7 +60,7 @@ export default function DataTable({ columns, data, loading, onSort, sortKey, sor
           ) : (
             <tr>
               <td colSpan={columns.length} className="data-table__empty">
-                {emptyMessage || 'No results found'}
+                {emptyMessage || "No results found"}
               </td>
             </tr>
           )}

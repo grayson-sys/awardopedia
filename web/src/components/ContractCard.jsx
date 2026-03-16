@@ -1,14 +1,14 @@
-import { Link } from 'react-router-dom';
-import { Building2, Calendar, MapPin, Tag } from 'lucide-react';
-import { formatCurrency, formatDateShort } from '../utils/format';
+import Link from "next/link";
+import { Building2, Calendar, MapPin, Tag } from "lucide-react";
+import { formatCurrency, formatDateShort } from "@/lib/format";
 
 export default function ContractCard({ award }) {
   return (
-    <Link to={`/awards/${award.award_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link href={`/awards/${award.award_id}`} style={{ textDecoration: "none", color: "inherit" }}>
       <div className="contract-card">
         <div className="contract-card__header">
           <div className="contract-card__title">
-            {award.description || award.award_id_piid || 'Untitled Award'}
+            {award.description || award.award_id_piid || "Untitled Award"}
           </div>
           <div className="contract-card__amount">
             {formatCurrency(award.federal_action_obligation)}
