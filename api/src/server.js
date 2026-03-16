@@ -11,6 +11,8 @@ import expiringRouter    from './routes/expiring.js';
 import statsRouter       from './routes/stats.js';
 import aiRouter          from './routes/ai.js';
 import webhooksRouter    from './routes/webhooks.js';
+import usersRouter       from './routes/users.js';
+import uploadsRouter     from './routes/uploads.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -38,6 +40,8 @@ app.use(`${prefix}/expiring`,    expiringRouter);
 app.use(`${prefix}/stats`,       statsRouter);
 app.use(`${prefix}/ai`,          aiRouter);
 app.use(`${prefix}/webhooks`,    webhooksRouter);
+app.use(`${prefix}/users`,      usersRouter);
+app.use(`${prefix}/uploads`,    uploadsRouter);
 
 // ── 404 ───────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ error: 'Not found' }));
