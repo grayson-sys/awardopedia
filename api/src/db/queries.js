@@ -88,10 +88,11 @@ export async function getRelatedAwards(award) {
 
 // ── Agencies ──────────────────────────────────────
 export async function listAgencies({ q, sort = 'total_awarded', dir = 'desc' }) {
-  let where = '';
+  // agencies table is not populated — derive live from awards
   const params = [];
+  let having = '';
   if (q) {
-    where = 'WHERE agency_name ILIKE $1';
+    having = 'HAVING agency_name ILIKE $1';
     params.push(`%${q}%`);
   }
   const allowedSort = ['agency_name', 'total_awarded', 'award_count', 'avg_award_value'];
@@ -99,7 +100,17 @@ export async function listAgencies({ q, sort = 'total_awarded', dir = 'desc' }) 
   const sortDirection = dir === 'asc' ? 'ASC' : 'DESC';
 
   const result = await query(
-    `SELECT * FROM agencies ${where} ORDER BY ${sortCol} ${sortDirection} NULLS LAST LIMIT 200`,
+    `SELECT
+       agency_name,
+       COUNT(*)                           AS award_count,
+       COALESCE(SUM(federal_action_obligation), 0) AS total_awarded,
+       COALESCE(AVG(federal_action_obligation), 0) AS avg_award_value
+     FROM awards
+     WHERE agency_name IS NOT NULL
+     GROUP BY agency_name
+     ${having}
+     ORDER BY ${sortCol} ${sortDirection} NULLS LAST
+     LIMIT 200`,
     params
   );
   return { data: result.rows };
