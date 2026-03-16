@@ -229,7 +229,7 @@ export async function getStats() {
   const [awards, value, agencies, expiring] = await Promise.all([
     query('SELECT COUNT(*) FROM awards'),
     query('SELECT COALESCE(SUM(federal_action_obligation), 0) as total FROM awards'),
-    query('SELECT COUNT(*) FROM agencies'),
+    query('SELECT COUNT(DISTINCT agency_name) as count FROM awards WHERE agency_name IS NOT NULL'),
     query("SELECT COUNT(*) FROM awards WHERE period_of_performance_current_end BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '180 days' AND federal_action_obligation > 0"),
   ]);
 

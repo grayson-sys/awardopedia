@@ -188,7 +188,8 @@ def map_row(r: dict, fetched_at: str) -> dict:
         # Amounts
         "federal_action_obligation":      r.get("Award Amount") or 0,
         # Dates
-        "action_date":                    r.get("Action Date"),
+        # spending_by_award returns Action Date=None; fall back to Start Date
+        "action_date":                    r.get("Action Date") or r.get("Start Date"),
         "period_of_performance_start":    r.get("Start Date"),
         "period_of_performance_current_end": r.get("End Date"),
         # Agency
