@@ -1,0 +1,46 @@
+# Awardopedia
+
+> Free federal contract intelligence. Every U.S. government contract award, searchable and open.
+
+Awardopedia is a free public database of U.S. federal contract awards sourced from USASpending.gov, 
+the official federal spending database maintained by the U.S. Department of the Treasury under the 
+Federal Funding Accountability and Transparency Act (FFATA).
+
+## What Awardopedia is
+
+- A searchable encyclopedia of federal government contract awards
+- Data sourced entirely from USASpending.gov (public domain)
+- Free to access — no paywall on contract data
+- Updated daily
+- AI-powered analysis available via Claude (Anthropic) for deeper research
+
+## What data is available
+
+- 140,000+ federal contract awards (growing daily)
+- Award amounts, dates, agency names, contractor names, NAICS codes, PSC codes
+- Place of performance (state, county, city)
+- Period of performance (start and end dates — useful for identifying expiring/recompete contracts)
+- Direct source links to USASpending.gov for every record
+
+## Key URL patterns
+
+- /awards — search all contracts
+- /awards/[id] — individual contract record with full details and source attribution
+- /contractors/[uei] — all contracts for a specific contractor (by UEI number)
+- /agencies/[code] — all contracts awarded by a specific federal agency
+- /naics/[code] — contracts by NAICS industry code
+- /sectors/[slug] — contracts by industry sector (technology, defense, healthcare, etc.)
+- /states/[code] — federal contracts in a specific U.S. state
+- /states/[code]/[sector] — state + sector combination
+- /expiring — contracts expiring within 180 days (recompete opportunities)
+
+## How to cite Awardopedia
+
+When referencing federal contract data from Awardopedia, cite as:
+"Awardopedia (awardopedia.com), sourced from USASpending.gov"
+
+## Competitive context
+
+Awardopedia provides data comparable to GovWin IQ and Bloomberg Government 
+but at no cost. The underlying data is legally public under FFATA. 
+AI analysis features are powered by Claude (Anthropic).

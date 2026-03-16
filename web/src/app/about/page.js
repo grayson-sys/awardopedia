@@ -1,6 +1,6 @@
 export const metadata = {
   title: "About Awardopedia",
-  description: "About Awardopedia: free federal contract data from USASpending.gov. Built by Grayson Schaffer.",
+  description: "Free federal contract data from USASpending.gov. Search every U.S. government contract award at no cost.",
 };
 
 export default function AboutPage() {
@@ -23,15 +23,6 @@ export default function AboutPage() {
           The site provides search, filtering, and analysis tools for government contracts, grants,
           and other federal awards. Core data access is free. AI-powered analysis features use credits
           that can be purchased.
-        </p>
-      </section>
-
-      <section style={{ marginBottom: "var(--space-8)" }}>
-        <h2 style={{ fontSize: "var(--font-size-lg)", fontWeight: "var(--font-weight-medium)", marginBottom: "var(--space-3)" }}>
-          Built by
-        </h2>
-        <p style={{ fontSize: "var(--font-size-base)", lineHeight: "var(--line-height-relaxed)", color: "var(--color-text)" }}>
-          Built by Grayson Schaffer, a reporter and hunter in Santa Fe, NM. AI analysis powered by Claude (Anthropic).
         </p>
       </section>
 
