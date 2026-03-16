@@ -10,6 +10,17 @@ export const metadata = {
   title: { default: "Awardopedia", template: "%s | Awardopedia" },
   description: "Free federal contract intelligence. Search every US government award.",
   metadataBase: new URL("https://awardopedia.com"),
+  icons: {
+    icon: [
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    shortcut: "/favicon.ico",
+  },
+  openGraph: {
+    images: [{ url: "/icon-512.png", width: 512, height: 512 }],
+  },
 };
 
 export default function RootLayout({ children }) {
