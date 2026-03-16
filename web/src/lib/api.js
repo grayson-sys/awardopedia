@@ -1,7 +1,10 @@
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-export async function serverFetch(path) {
-  const res = await fetch(`${API}/api${path}`, { next: { revalidate: 3600 } });
+export async function serverFetch(path, opts = {}) {
+  const fetchOpts = opts.noCache
+    ? { cache: 'no-store' }
+    : { next: { revalidate: opts.revalidate ?? 3600 } };
+  const res = await fetch(`${API}/api${path}`, fetchOpts);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `API error: ${res.status}`);
@@ -21,7 +24,7 @@ export async function getAwards(params = {}) {
 }
 
 export async function getAward(id) {
-  return serverFetch(`/awards/${id}`);
+  return serverFetch(`/awards/${id}`, { noCache: true });
 }
 
 export async function getAgencies(params = {}) {
