@@ -42,6 +42,13 @@ Waiting for user to say "go" for Phase 1.
 - Vercel token still in .env (VERCEL_TOKEN) — not needed anymore. Leave it, don't delete.
 - Frontend has no router yet — single page with state-based view switching. Add react-router when Phase 6 (API key registration page) is needed.
 
+## Ralph Loop
+- scripts/ralph/ralph.sh — the loop runner (max 3 iterations, claude tool default)
+- scripts/ralph/CLAUDE.md — per-iteration instructions Claude Code reads on startup
+- scripts/ralph/progress.txt — iteration history + codebase patterns
+- To run: `cd ~/awardopedia && ./scripts/ralph/ralph.sh 1` (one iteration at a time)
+- ralph.sh is capped at 3 iterations max. Never run unattended overnight.
+
 ## Files changed (Phase 0)
 - ~/awardopedia/MASTER_PROMPT.md (new)
 - ~/awardopedia/MEMORY.md (new)

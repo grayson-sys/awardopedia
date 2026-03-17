@@ -1,0 +1,13 @@
+# Ralph Progress Log — Awardopedia
+Started: 2025-03-17
+---
+
+## Codebase Patterns
+- DB DDL: always use doadmin credentials. awardopedia_user for DML only. Grant privileges after every CREATE TABLE.
+- Frontend build: `cd ~/awardopedia/web && npm run build` — must pass clean before any commit.
+- Never put secrets in MEMORY.md — GitHub secret scanning will block the push.
+- prd.json uses `status: "pending" | "in-progress" | "complete"` (not `passes: true/false`).
+- Ollama: llama3.2:3b is downloaded and ready. `ollama serve` may need to be started first.
+- Phase 0 complete as of 2025-03-17. DB clean, React+Vite scaffold up, mock UI working.
+
+---
