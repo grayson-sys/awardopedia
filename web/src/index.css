@@ -278,3 +278,8 @@ a:hover { text-decoration: underline; }
 .text-muted { color: var(--color-muted); }
 .text-sm { font-size: 12px; }
 .fw-600 { font-weight: 600; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

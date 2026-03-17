@@ -46,7 +46,11 @@ Phase 1 complete. Waiting for user to say "go" for Phase 2.
 - Vercel token still in .env (VERCEL_TOKEN) — not needed anymore. Leave it, don't delete.
 - Frontend has no router yet — single page with state-based view switching. Add react-router when Phase 6 (API key registration page) is needed.
 - USASpending PIID lookup: direct /api/v2/awards/{piid}/ returns 404 for this format. Use generated_unique_award_id format: CONT_AWD_{piid_no_dashes}_{agency_code}_-NONE-_-NONE-
-- FPDS ezsearch endpoint is dead (redirects to SAM.gov Drupal). Skip FPDS enrichment for now — USASpending has all critical fields. Revisit in Phase 4.
+- FPDS ezsearch endpoint is DEAD. Replacement: SAM.gov Contract Awards API → https://open.gsa.gov/api/contract-awards/
+  Full variance doc from FPDS legacy → SAM API: linked from that page. Requires SAM_API_KEY (same free key as opportunities).
+  Use this in Phase 4 enrich_fpds.py — rename to enrich_contracts.py. Endpoint: api.sam.gov/prod/contractawards/v1/
+  This fills in: contracting officer name, modification history, pricing details — everything FPDS used to provide.
+  ⚠️ DO NOT FORGET — Phase 4 enrichment depends on this.
 - DO PostgreSQL SSL: set NODE_TLS_REJECT_UNAUTHORIZED=0 in server.js (self-signed cert). Already done.
 - API server: start with `cd ~/awardopedia/server && node server.js`
 - Dev server: start with `cd ~/awardopedia/web && npm run dev`

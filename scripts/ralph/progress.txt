@@ -11,3 +11,17 @@ Started: 2025-03-17
 - Phase 0 complete as of 2025-03-17. DB clean, React+Vite scaffold up, mock UI working.
 
 ---
+
+## Codebase Patterns (updated 2025-03-17)
+- FPDS enrichment: old fpds.gov/ezsearch is DEAD. Use SAM.gov Contract Awards API instead.
+  New endpoint: https://api.sam.gov/prod/contractawards/v1/
+  Docs: https://open.gsa.gov/api/contract-awards/
+  Requires: SAM_API_KEY (same free key used for Phase 2 opportunities)
+  Rename enrich_fpds.py → enrich_contracts.py in Phase 4.
+
+- USASpending link format: use generated_unique_award_id, NOT bare piid.
+  Correct: https://www.usaspending.gov/award/CONT_AWD_FA877324C0001_9700_-NONE-_-NONE-
+  Wrong:   https://www.usaspending.gov/award/FA877324C0001
+
+- Link verification: NEVER store a URL without verifying it first (HEAD request, expect 200).
+  Check usaspending_alive and sam_url_alive before insert. Update checked timestamp.

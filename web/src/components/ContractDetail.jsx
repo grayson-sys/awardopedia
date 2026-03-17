@@ -1,4 +1,5 @@
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, FileText, Loader } from 'lucide-react'
 
 function fmt(n) {
   if (!n) return '—'
@@ -19,8 +20,82 @@ function ExpiryLabel({ days }) {
   return <span>{days} days</span>
 }
 
+const SECTION_LABELS = {
+  executive_summary: 'Executive Summary',
+  award_details: 'Award Details',
+  competitive_landscape: 'Competitive Landscape',
+  incumbent_analysis: 'Incumbent Analysis',
+  recompete_assessment: 'Recompete Assessment',
+  recommended_action: 'Recommended Action',
+  attribution: null, // rendered separately
+}
+
+function ReportView({ sections, cached, generatedAt }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span className="badge badge-success">Report Ready</span>
+        {cached && <span className="text-sm text-muted">Cached</span>}
+        {generatedAt && (
+          <span className="text-sm text-muted">
+            Generated {new Date(generatedAt).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+
+      {/* Recommended Action — prominent first */}
+      {sections.recommended_action && (
+        <div className="card" style={{ borderLeft: '3px solid var(--color-navy)', marginBottom: 12 }}>
+          <div className="section-title">Recommended Action</div>
+          <p style={{ fontSize: 13, lineHeight: 1.6 }}>{sections.recommended_action}</p>
+        </div>
+      )}
+
+      {/* Remaining sections */}
+      {Object.entries(SECTION_LABELS)
+        .filter(([key, label]) => label && key !== 'recommended_action' && sections[key])
+        .map(([key, label]) => (
+          <div key={key} className="card" style={{ marginBottom: 12 }}>
+            <div className="section-title">{label}</div>
+            <p style={{ fontSize: 13, lineHeight: 1.6 }}>{sections[key]}</p>
+          </div>
+        ))
+      }
+
+      {/* Attribution */}
+      {sections.attribution && (
+        <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 8, fontStyle: 'italic' }}>
+          {sections.attribution}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ContractDetail({ contract, onBack }) {
   const days = daysLeft(contract.end_date)
+  const [report, setReport] = useState(null)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState(null)
+
+  async function generateReport() {
+    setReportLoading(true)
+    setReportError(null)
+    try {
+      const res = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piid: contract.piid })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
+      setReport(data)
+    } catch (e) {
+      setReportError(e.message)
+    } finally {
+      setReportLoading(false)
+    }
+  }
 
   return (
     <div>
@@ -203,6 +278,15 @@ export default function ContractDetail({ contract, onBack }) {
                 </div>
               </div>
             </div>
+
+            {/* AI Report — expands in main column when generated */}
+            {report?.sections && (
+              <ReportView
+                sections={report.sections}
+                cached={report.cached}
+                generatedAt={report.generated_at}
+              />
+            )}
           </div>
 
           {/* Sidebar */}
@@ -230,23 +314,47 @@ export default function ContractDetail({ contract, onBack }) {
 
             {/* Report CTA */}
             <div className="card mt-16">
-              <div className="section-title">Generate Report</div>
-              <p style={{ fontSize: 13, marginBottom: 12 }}>
-                Get a detailed analysis: competitive landscape, incumbent history, recompete assessment, bid recommendation.
-              </p>
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12 }}>
-                Powered by Claude · PDF + CSV · 1 credit ($0.33)
-              </div>
-              {contract.report_generated ? (
-                <div>
-                  <span className="badge badge-success">Report available</span>
-                  <div className="text-sm text-muted mt-4">Generated {contract.report_generated_at}</div>
-                  <button className="btn btn-amber btn-sm mt-8">Download Report — 1 Credit</button>
+              <div className="section-title">AI Analysis Report</div>
+
+              {!report && !reportLoading && (
+                <>
+                  <p style={{ fontSize: 13, marginBottom: 12 }}>
+                    Competitive landscape · Incumbent analysis · Recompete assessment · Bid recommendation
+                  </p>
+                  <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12 }}>
+                    Powered by Claude · 1 credit ($0.33)
+                  </div>
+                  {reportError && (
+                    <div style={{ fontSize: 12, color: 'var(--color-danger)', marginBottom: 8 }}>
+                      Error: {reportError}
+                    </div>
+                  )}
+                  <button
+                    className="btn btn-amber"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={generateReport}
+                  >
+                    <FileText size={14} /> Generate Report — 1 Credit
+                  </button>
+                </>
+              )}
+
+              {reportLoading && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--color-muted)', fontSize: 13 }}>
+                  <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  Analyzing contract data...
                 </div>
-              ) : (
-                <button className="btn btn-amber" style={{ width: '100%', justifyContent: 'center' }}>
-                  Generate Report — 1 Credit
-                </button>
+              )}
+
+              {report && (
+                <div>
+                  <span className="badge badge-success" style={{ marginBottom: 8, display: 'inline-block' }}>
+                    {report.cached ? 'Cached Report' : 'Report Generated'}
+                  </span>
+                  <div className="text-sm text-muted">
+                    Generated {new Date(report.generated_at).toLocaleDateString()}
+                  </div>
+                </div>
               )}
             </div>
           </div>
