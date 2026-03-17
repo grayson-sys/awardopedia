@@ -1,0 +1,240 @@
+{
+  "id": 298614279,
+  "generated_unique_award_id": "CONT_AWD_FA877324C0001_9700_-NONE-_-NONE-",
+  "piid": "FA877324C0001",
+  "category": "contract",
+  "type": "D",
+  "type_description": "DEFINITIVE CONTRACT",
+  "description": "FUNCTIONAL MISSION ANALYSIS-CYBER (FMA-C) II FOR 38TH ENGINEERING SQUADRON (ES)",
+  "total_obligation": 3414697.15,
+  "subaward_count": 0,
+  "total_subaward_amount": null,
+  "date_signed": "2024-08-21",
+  "base_exercised_options": 3414697.15,
+  "base_and_all_options": 3414697.15,
+  "total_account_outlay": 0,
+  "total_account_obligation": 0,
+  "account_outlays_by_defc": [],
+  "account_obligations_by_defc": [],
+  "parent_award": null,
+  "latest_transaction_contract_data": {
+    "idv_type_description": null,
+    "type_of_idc_description": null,
+    "referenced_idv_agency_iden": null,
+    "referenced_idv_agency_desc": null,
+    "solicitation_identifier": "FA877324R0006",
+    "solicitation_procedures": "SP1",
+    "number_of_offers_received": "1",
+    "extent_competed": "G",
+    "type_set_aside": "8AN",
+    "type_set_aside_description": "8(A) SOLE SOURCE",
+    "evaluated_preference": "NONE",
+    "fed_biz_opps": "N",
+    "fed_biz_opps_description": "NO",
+    "small_business_competitive": false,
+    "product_or_service_code": "R408",
+    "naics": "541330",
+    "naics_description": "ENGINEERING SERVICES",
+    "sea_transportation": null,
+    "clinger_cohen_act_planning": "N",
+    "labor_standards": "Y",
+    "cost_or_pricing_data": "Y",
+    "domestic_or_foreign_entity": "A",
+    "foreign_funding": "X",
+    "major_program": "MDT 2.0",
+    "program_acronym": null,
+    "subcontracting_plan": "B",
+    "multi_year_contract": "N",
+    "consolidated_contract": "D",
+    "type_of_contract_pricing": "J",
+    "national_interest_action": null,
+    "multiple_or_single_award_description": null,
+    "solicitation_procedures_description": "SIMPLIFIED ACQUISITION",
+    "extent_competed_description": "NOT COMPETED UNDER SAP",
+    "other_than_full_and_open": "OTH",
+    "other_than_full_and_open_description": "AUTHORIZED BY STATUTE (FAR 6.302-5(A)(2)(I))",
+    "commercial_item_acquisition": "A",
+    "commercial_item_acquisition_description": "COMMERCIAL PRODUCTS/SERVICES",
+    "commercial_item_test_program": "N",
+    "commercial_item_test_program_description": "NO",
+    "evaluated_preference_description": "NO PREFERENCE USED",
+    "fair_opportunity_limited": null,
+    "fair_opportunity_limited_description": null,
+    "product_or_service_description": "SUPPORT- PROFESSIONAL: PROGRAM MANAGEMENT/SUPPORT",
+    "dod_claimant_program": null,
+    "dod_claimant_program_description": null,
+    "dod_acquisition_program": "000",
+    "dod_acquisition_program_description": "NONE",
+    "information_technology_commercial_item_category": "Z",
+    "information_technology_commercial_item_category_description": "NOT IT PRODUCTS OR SERVICES",
+    "sea_transportation_description": null,
+    "clinger_cohen_act_planning_description": "NO",
+    "construction_wage_rate": "N",
+    "construction_wage_rate_description": "NO",
+    "labor_standards_description": "YES",
+    "materials_supplies": "N",
+    "materials_supplies_description": "NO",
+    "cost_or_pricing_data_description": "YES",
+    "domestic_or_foreign_entity_description": "U.S. OWNED BUSINESS",
+    "foreign_funding_description": "NOT APPLICABLE",
+    "interagency_contracting_authority": "X",
+    "interagency_contracting_authority_description": "NOT APPLICABLE",
+    "price_evaluation_adjustment": "0.00",
+    "subcontracting_plan_description": "PLAN NOT REQUIRED",
+    "multi_year_contract_description": "NO",
+    "purchase_card_as_payment_method": "N",
+    "purchase_card_as_payment_method_description": "NO",
+    "consolidated_contract_description": "NOT CONSOLIDATED",
+    "type_of_contract_pricing_description": "FIRM FIXED PRICE",
+    "national_interest_action_description": null
+  },
+  "funding_agency": {
+    "id": 1196,
+    "has_agency_page": true,
+    "toptier_agency": {
+      "name": "Department of Defense",
+      "code": "097",
+      "abbreviation": "DOD",
+      "slug": "department-of-defense"
+    },
+    "subtier_agency": {
+      "name": "Department of the Air Force",
+      "code": "5700",
+      "abbreviation": "USAF"
+    },
+    "office_agency_name": "F3YCEZ 38 EIG PC"
+  },
+  "awarding_agency": {
+    "id": 1196,
+    "has_agency_page": true,
+    "toptier_agency": {
+      "name": "Department of Defense",
+      "code": "097",
+      "abbreviation": "DOD",
+      "slug": "department-of-defense"
+    },
+    "subtier_agency": {
+      "name": "Department of the Air Force",
+      "code": "5700",
+      "abbreviation": "USAF"
+    },
+    "office_agency_name": "FA8773 ACC 38 CONS"
+  },
+  "period_of_performance": {
+    "start_date": "2024-09-15",
+    "end_date": "2025-09-14",
+    "last_modified_date": "2025-12-11",
+    "potential_end_date": "2025-09-14 00:00:00"
+  },
+  "recipient": {
+    "recipient_hash": "46511940-467c-2841-2fcb-fca1a9e04c76-C",
+    "recipient_name": "NISGAA CIOPS LLC",
+    "recipient_uei": "W155VW3NQYM5",
+    "recipient_unique_id": null,
+    "parent_recipient_hash": "46511940-467c-2841-2fcb-fca1a9e04c76-P",
+    "parent_recipient_name": "NISGAA CIOPS LLC",
+    "parent_recipient_uei": "W155VW3NQYM5",
+    "parent_recipient_unique_id": null,
+    "business_categories": [
+      "8(a) Program Participant",
+      "Alaskan Native Corporation Owned Firm",
+      "Category Business",
+      "Corporate Entity Not Tax Exempt",
+      "Limited Liability Corporation",
+      "Minority Owned Business",
+      "Native American Owned Business",
+      "Self-Certified Small Disadvantaged Business",
+      "Small Business",
+      "Special Designations",
+      "U.S.-Owned Business"
+    ],
+    "location": {
+      "location_country_code": "USA",
+      "country_name": "UNITED STATES",
+      "state_code": "AK",
+      "state_name": "ALASKA",
+      "city_name": "JUNEAU",
+      "county_code": "110",
+      "county_name": "JUNEAU",
+      "address_line1": "3025 CLINTON DR",
+      "address_line2": null,
+      "address_line3": null,
+      "congressional_code": "00",
+      "zip4": "7154",
+      "zip5": "99801",
+      "foreign_postal_code": null,
+      "foreign_province": null
+    }
+  },
+  "executive_details": {
+    "officers": [
+      {
+        "name": null,
+        "amount": null
+      },
+      {
+        "name": null,
+        "amount": null
+      },
+      {
+        "name": null,
+        "amount": null
+      },
+      {
+        "name": null,
+        "amount": null
+      },
+      {
+        "name": null,
+        "amount": null
+      }
+    ]
+  },
+  "place_of_performance": {
+    "location_country_code": "USA",
+    "country_name": "UNITED STATES",
+    "county_code": "109",
+    "county_name": "OKLAHOMA",
+    "city_name": "OKLAHOMA CITY",
+    "state_code": "OK",
+    "state_name": "OKLAHOMA",
+    "congressional_code": "04",
+    "zip4": "2713",
+    "zip5": "73145",
+    "address_line1": null,
+    "address_line2": null,
+    "address_line3": null,
+    "foreign_province": null,
+    "foreign_postal_code": null
+  },
+  "psc_hierarchy": {
+    "toptier_code": {
+      "code": "R",
+      "description": "SUPPORT SVCS (PROF, ADMIN, MGMT)"
+    },
+    "midtier_code": {
+      "code": "R4",
+      "description": "PROFESSIONAL SERVICES"
+    },
+    "subtier_code": {},
+    "base_code": {
+      "code": "R408",
+      "description": "SUPPORT- PROFESSIONAL: PROGRAM MANAGEMENT/SUPPORT"
+    }
+  },
+  "naics_hierarchy": {
+    "toptier_code": {
+      "code": "54",
+      "description": "Professional, Scientific, and Technical Services"
+    },
+    "midtier_code": {
+      "code": "5413",
+      "description": "Architectural, Engineering, and Related Services"
+    },
+    "base_code": {
+      "code": "541330",
+      "description": "Engineering Services"
+    }
+  },
+  "total_outlay": null
+}

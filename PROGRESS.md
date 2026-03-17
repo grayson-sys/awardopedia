@@ -3,7 +3,7 @@ Last updated: 2025-03-17
 
 ## Phases
 [x] Phase 0: Audit and stabilize existing work
-[ ] Phase 1: One perfect past contract record (USASpending API + FPDS enrichment)
+[x] Phase 1: One perfect past contract record (USASpending API + FPDS enrichment)
 [ ] Phase 2: One perfect upcoming opportunity record (SAM.gov API)
 [ ] Phase 3: LLAMA summaries for both record types
 [ ] Phase 4: Always-on background scraper scripts

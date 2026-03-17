@@ -27,20 +27,30 @@ DB connect (admin): use doadmin credentials — retrieve via DO API using DO_TOK
 2025-03-17 — Scaffolded React+Vite frontend. Design system tokens applied. Inter + JetBrains Mono.
 2025-03-17 — Built mock UI: contract table row → click → expanded detail. Opportunity table row → click → expanded detail. Build passes clean.
 2025-03-17 — Saved MASTER_PROMPT.md to ~/awardopedia/MASTER_PROMPT.md.
+2025-03-17 — Phase 1: Fetched PIID FA8773-24-C-0001 (NISGAA CIOPS LLC / DoD / $3.4M). Real record in DB.
+2025-03-17 — Phase 1: Created Express API server (server/server.js) on port 3001. Routes: /api/contracts, /api/opportunities, /api/stats, /health.
+2025-03-17 — Phase 1: Updated frontend to fetch live from API. Vite proxy /api → localhost:3001. Mock data removed.
+2025-03-17 — Phase 1: Build passes. Dev server running at localhost:5173. One real contract displaying.
 
 ## In progress
-Waiting for user to say "go" for Phase 1.
+Phase 1 complete. Waiting for user to say "go" for Phase 2.
 
 ## Next 3 steps
-1. Pull llama3.2:3b: `ollama pull llama3.2:3b` (2GB download, do this now so it's ready for Phase 3)
-2. Phase 1: Write fetch_one_contract.py for PIID FA8773-24-C-0001
-3. Phase 1: Display real record end-to-end before fetching any more
+1. Phase 2: Register SAM.gov API key (free at sam.gov) and add SAM_API_KEY to .env
+2. Phase 2: Write fetch_one_opportunity.py to fetch one active solicitation
+3. Phase 2: Insert + display opportunity end-to-end like Phase 1
 
 ## Known gotchas
 - DB tables were created by doadmin — app user (awardopedia_user) needs grants after any CREATE TABLE. Always use doadmin for DDL, app user for DML.
 - Previous agent spawned unbounded ingest overnight → 1.62M records. NEVER run ingest without --limit flag. Always test with --limit 10 first.
 - Vercel token still in .env (VERCEL_TOKEN) — not needed anymore. Leave it, don't delete.
 - Frontend has no router yet — single page with state-based view switching. Add react-router when Phase 6 (API key registration page) is needed.
+- USASpending PIID lookup: direct /api/v2/awards/{piid}/ returns 404 for this format. Use generated_unique_award_id format: CONT_AWD_{piid_no_dashes}_{agency_code}_-NONE-_-NONE-
+- FPDS ezsearch endpoint is dead (redirects to SAM.gov Drupal). Skip FPDS enrichment for now — USASpending has all critical fields. Revisit in Phase 4.
+- DO PostgreSQL SSL: set NODE_TLS_REJECT_UNAUTHORIZED=0 in server.js (self-signed cert). Already done.
+- API server: start with `cd ~/awardopedia/server && node server.js`
+- Dev server: start with `cd ~/awardopedia/web && npm run dev`
+- API is proxied via Vite: frontend calls /api/* → localhost:3001
 
 ## Ralph Loop
 - scripts/ralph/ralph.sh — the loop runner (max 3 iterations, claude tool default)

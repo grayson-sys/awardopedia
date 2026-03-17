@@ -11,7 +11,7 @@
     "title": "One perfect past contract record",
     "description": "Fetch one real contract from USASpending API (PIID FA8773-24-C-0001), enrich from FPDS, insert into DB, display in UI end-to-end.",
     "acceptance_criteria": "Single real contract record in DB. All schema fields populated where available. Contract row renders in table. Click-in detail shows all fields. Nothing left on floor.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 2,
