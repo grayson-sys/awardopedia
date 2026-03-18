@@ -1,8 +1,8 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
-Current phase: 7 — SEO static HTML page generation
-NOTE: Phase 6B (security hardening) complete. Phase 7 is next.
+Current phase: 8 — Report generation + Stripe + PDF/CSV + caching
+NOTE: Phase 7 (SEO static pages) complete. Phase 8 is next.
 
 ## Stack
 Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)
@@ -37,6 +37,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - Phase 5: check_links.py — 10-thread concurrent, 3h time-boxed, Sunday 3am LaunchAgent ✅
 - Phase 6: Public API v1, API key system, rate limiting, ApiKeys.jsx, Terms.jsx, llms.txt, TOS ✅
 - Phase 6B: Security hardening — per-IP rate limits, input validation, security headers, robots.txt, honeypots, abuse logging, report endpoint protection, safe error handling ✅
+- Phase 7: SEO static HTML pages — generate_static.py, DO Spaces upload, sitemap.xml, LaunchAgent daily 5am ✅
 
 ## Current DB state
 - contracts: 1 record (NISGAA CIOPS LLC / FA877324C0001) — waiting on 6pm SAM.gov batch for 100 more
@@ -51,6 +52,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - 7:00pm daily: summarize_batch.py (Ollama summaries)
 - 1:00am daily: ingest_contracts.py (USASpending only, no rate limit)
 - 3:00am Sunday: check_links.py (dead link checker)
+- 5:00am daily: generate_static.py --new-only (SEO static pages + DO Spaces upload)
 - Verify: launchctl list | grep awardopedia
 - Plist files: ~/awardopedia/launchagents/ (copies) and ~/Library/LaunchAgents/ (live)
 
@@ -69,6 +71,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - scripts/summarize.py — Ollama summary generation (canonical)
 - scripts/summarize_batch.py — batch summarizer for cron
 - scripts/check_links.py — weekly dead link checker
+- scripts/generate_static.py — SEO static HTML generation + DO Spaces upload + sitemap
 
 ## Known gotchas
 - ⚠️ api_keys needs key_prefix column: ALTER TABLE api_keys ADD COLUMN key_prefix VARCHAR(20);

@@ -60,7 +60,7 @@
     "title": "SEO static HTML page generation + DO Spaces + Cloudflare CDN",
     "description": "Write generate_static.py. One HTML file per contract and opportunity. Upload to DO Spaces. Cloudflare CDN. Sitemap submitted to Google.",
     "acceptance_criteria": "Static pages generated for all DB records. Accessible via Cloudflare CDN. Sitemap submitted.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 8,

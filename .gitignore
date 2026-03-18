@@ -7,3 +7,4 @@ ingestion_progress.json
 *.log
 .DS_Store
 .vercel
+static/

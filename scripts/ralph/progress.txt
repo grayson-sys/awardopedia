@@ -68,3 +68,24 @@ Started: 2025-03-17
 - Build result: PASS
 - Learnings: Most of Phase 6 server code was already written in a prior session — only needed to wire up the frontend routing. api_keys table ownership still needs fixing in DO console (doadmin → awardopedia_user) before registration will work in prod.
 ---
+
+## 2026-03-18 — Phase 7: SEO static HTML page generation + DO Spaces + Cloudflare CDN
+- What was implemented:
+  - scripts/generate_static.py — full static page generator with flags: --new-only, --local-only, --dry-run
+  - Contract HTML template: title, meta description, canonical URL, JSON-LD (Schema.org/GovernmentService), OG tags, all record fields in readable grid layout, trust box with source citations, CTA to interactive version
+  - Opportunity HTML template: same structure, recompete badge, incumbent section, estimated value range
+  - Sitemap generation: sitemap.xml with homepage + all contract/opportunity URLs
+  - DO Spaces upload via boto3 (Content-Type: text/html, Cache-Control: public max-age=86400, ACL: public-read)
+  - DB tracking: updates static_page_url and static_page_generated after upload
+  - LaunchAgent plist: com.awardopedia.static — daily 5am, --new-only flag
+  - Inline CSS matching brand tokens (navy #1B3A6B, amber #E9A820, Inter font)
+  - .gitignore updated to exclude static/ directory
+- Files changed: scripts/generate_static.py (new), launchagents/com.awardopedia.static.plist (new), .gitignore
+- Build result: PASS
+- Test result: 1 contract page generated successfully (FA877324C0001.html, ~15KB), sitemap.xml generated (2 URLs)
+- Learnings:
+  - contracts table uses piid (not award_id_piid from awards table) — separate table from schema.sql
+  - boto3 needed for DO Spaces upload — not available system-wide, user needs: python3 -m pip install boto3
+  - LaunchAgent needs to be copied to ~/Library/LaunchAgents/ and loaded with launchctl to activate
+  - Cloudflare CDN cache rules and Google Search Console sitemap submission are infrastructure tasks — NOT done by this script (user action required)
+---

@@ -9,7 +9,7 @@ Last updated: 2025-03-17
 [ ] Phase 4: Always-on background scraper scripts
 [ ] Phase 5: Weekly dead-link checker script
 [x] Phase 6: Public read API + API key system + llms.txt + TOS
-[ ] Phase 7: SEO static HTML page generation + DO Spaces + Cloudflare CDN
+[x] Phase 7: SEO static HTML page generation + DO Spaces + Cloudflare CDN
 [ ] Phase 8: Report generation + Stripe payment + PDF/CSV output + report caching
 [ ] Phase 9: Auth system stub (scaffold only, do not build)
 
