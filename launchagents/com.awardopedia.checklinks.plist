@@ -6,7 +6,7 @@
     <string>com.awardopedia.checklinks</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/openclaw/awardopedia/.venv/bin/python3</string>
         <string>/Users/openclaw/awardopedia/scripts/check_links.py</string>
     </array>
     <key>WorkingDirectory</key>

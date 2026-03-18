@@ -6,7 +6,7 @@
     <string>com.awardopedia.sync</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/openclaw/awardopedia/.venv/bin/python3</string>
         <string>/Users/openclaw/awardopedia/scripts/sync_opportunities.py</string>
     </array>
     <key>WorkingDirectory</key>

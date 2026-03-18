@@ -6,7 +6,7 @@
     <string>com.awardopedia.ingest</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/openclaw/awardopedia/.venv/bin/python3</string>
         <string>/Users/openclaw/awardopedia/scripts/ingest_contracts.py</string>
     </array>
     <key>WorkingDirectory</key>

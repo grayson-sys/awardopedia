@@ -6,7 +6,7 @@
     <string>com.awardopedia.static</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/openclaw/awardopedia/.venv/bin/python3</string>
         <string>/Users/openclaw/awardopedia/scripts/generate_static.py</string>
         <string>--new-only</string>
     </array>

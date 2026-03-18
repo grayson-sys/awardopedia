@@ -8,3 +8,4 @@ ingestion_progress.json
 .DS_Store
 .vercel
 static/
+.venv/
