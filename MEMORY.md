@@ -1,78 +1,95 @@
 # MagnumHilux Memory
-Last updated: 2025-03-17
+Last updated: 2026-03-18
 
-Current phase: 0 — Audit and stabilize (COMPLETE)
-Current task: Phase 0 complete. Ready for Phase 1.
+Current phase: 6 — Public read API + API key system + llms.txt + TOS
 
 ## Stack
-Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (not yet deployed, pending Phase 0→1)
-Backend: none yet — Phase 1 will add Express API if needed, or Next.js API routes. TBD.
-Database: PostgreSQL 15, DO Managed DB (~$15/mo)
-Scripts: Run locally on Mac Mini (none written yet — Phase 4)
-AI summaries: llama3.2:3b via Ollama (not yet pulled — needs `ollama pull llama3.2:3b`)
-Domain: awardopedia.com via Cloudflare Registrar
-CDN/DNS/Bots: Cloudflare
+Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)
+Backend: Node.js/Express (~/awardopedia/server/server.js) — port 3001, DO App Platform (~$5/mo)
+Database: PostgreSQL 15, DO Managed DB (~$15/mo) — awardopedia_user for DML, doadmin for DDL
+Scripts: Python 3 on Mac Mini — scheduled via LaunchAgents (NOT cron — cron is broken)
+AI summaries: llama3.2:3b via Ollama (running, Metal GPU, ~4-5s/record)
+AI reports: Claude API (Anthropic) — 7-section XML format, cached 90 days
+Domain: awardopedia.com → Cloudflare → DO App Platform
+API server: cd ~/awardopedia/server && NODE_TLS_REJECT_UNAUTHORIZED=0 node server.js
+Dev server: cd ~/awardopedia/web && npm run dev (port 5173, proxies /api → 3001)
+Build: cd ~/awardopedia/web && npx vite build --mode development
 
-## Key commands
-Build frontend: cd ~/awardopedia/web && npm run build
-Dev server: cd ~/awardopedia/web && npm run dev
-DB connect (app user): psycopg2 using DATABASE_URL from .env
-DB connect (admin): use doadmin credentials — retrieve via DO API using DO_TOKEN. See ~/awardopedia/.env for DO_TOKEN.
+## Completed phases
+- Phase 0: Audit, schema rebuild, React+Vite scaffold, design system ✅
+- Phase 1: NISGAA CIOPS LLC (FA877324C0001) — real contract, 58 fields, Claude report ✅
+- Phase 2: OpportunityDetail.jsx, /api/reports/generate-opportunity, /api/reports/opportunity/:id ✅
+- Phase 3: summarize.py + summarize_batch.py — llama3.2:3b via Ollama ✅
+- Phase 4: ingest_contracts.py, enrich_fpds.py, sync_opportunities.py, summarize_batch.py + LaunchAgents ✅
+- Phase 5: check_links.py — 10-thread concurrent, 3h time-boxed, Sunday 3am LaunchAgent ✅
 
-## Completed (append-only)
-2025-03-17 — Phase 0: Audit complete. Found Next.js on Vercel, wrong schema, 100 stale records.
-2025-03-17 — Deleted Next.js frontend (web/). Dropping Next.js + Vercel entirely.
-2025-03-17 — Dropped all DB tables. Ran fresh schema migration (migrations/001_initial_schema.sql).
-2025-03-17 — Schema: contracts, opportunities, api_keys, reports, users (stub), dead_links.
-2025-03-17 — Scaffolded React+Vite frontend. Design system tokens applied. Inter + JetBrains Mono.
-2025-03-17 — Built mock UI: contract table row → click → expanded detail. Opportunity table row → click → expanded detail. Build passes clean.
-2025-03-17 — Saved MASTER_PROMPT.md to ~/awardopedia/MASTER_PROMPT.md.
-2025-03-17 — Phase 1: Fetched PIID FA8773-24-C-0001 (NISGAA CIOPS LLC / DoD / $3.4M). Real record in DB.
-2025-03-17 — Phase 1: Created Express API server (server/server.js) on port 3001. Routes: /api/contracts, /api/opportunities, /api/stats, /health.
-2025-03-17 — Phase 1: Updated frontend to fetch live from API. Vite proxy /api → localhost:3001. Mock data removed.
-2025-03-17 — Phase 1: Build passes. Dev server running at localhost:5173. One real contract displaying.
+## Current DB state
+- contracts: 1 record (NISGAA CIOPS LLC / FA877324C0001) — waiting on 6pm SAM.gov batch for 100 more
+- opportunities: 0 records — waiting on 6pm SAM.gov batch
+- api_keys: table exists, owned by doadmin (⚠️ needs ownership fix — see gotchas)
+- dead_links: table exists, owned by doadmin (⚠️ same)
+- reports: table exists, 1 cached report (NISGAA)
 
-## In progress
-Phase 1 complete. Waiting for user to say "go" for Phase 2.
+## LaunchAgents (Mac Mini — use launchctl, NOT cron)
+- 6:00pm daily: fetch_batch.py (SAM.gov 100 contracts + USASpending enrich)
+- 6:30pm daily: sync_opportunities.py (SAM.gov 100 opportunities)
+- 7:00pm daily: summarize_batch.py (Ollama summaries)
+- 1:00am daily: ingest_contracts.py (USASpending only, no rate limit)
+- 3:00am Sunday: check_links.py (dead link checker)
+- Verify: launchctl list | grep awardopedia
+- Plist files: ~/awardopedia/launchagents/ (copies) and ~/Library/LaunchAgents/ (live)
 
-## Next 3 steps
-1. Phase 2: Register SAM.gov API key (free at sam.gov) and add SAM_API_KEY to .env
-2. Phase 2: Write fetch_one_opportunity.py to fetch one active solicitation
-3. Phase 2: Insert + display opportunity end-to-end like Phase 1
+## Key files
+- server/server.js — Express API, all routes (/api/contracts, /api/opportunities, /api/stats, /api/reports/*)
+- web/src/App.jsx — main React app, state-based routing
+- web/src/components/ContractDetail.jsx — contract detail + report generation
+- web/src/components/OpportunityDetail.jsx — opportunity detail + report generation
+- web/src/components/Nav.jsx — nav bar (BookOpen icon + "Awardopedia" wordmark)
+- web/src/tokens.css — brand colors: navy #1B3A6B, gold #E9A820
+- scripts/fetch_batch.py — master SAM.gov awards ingest (1 call = 100 records)
+- scripts/fetch_opportunity.py — SAM.gov opportunity fetch
+- scripts/ingest_contracts.py — USASpending bulk ingest (resumable, progress JSON)
+- scripts/enrich_fpds.py — SAM.gov CO data enrichment
+- scripts/sync_opportunities.py — daily opportunity delta
+- scripts/summarize.py — Ollama summary generation (canonical)
+- scripts/summarize_batch.py — batch summarizer for cron
+- scripts/check_links.py — weekly dead link checker
 
 ## Known gotchas
-- DB tables were created by doadmin — app user (awardopedia_user) needs grants after any CREATE TABLE. Always use doadmin for DDL, app user for DML.
-- Previous agent spawned unbounded ingest overnight → 1.62M records. NEVER run ingest without --limit flag. Always test with --limit 10 first.
-- Vercel token still in .env (VERCEL_TOKEN) — not needed anymore. Leave it, don't delete.
-- Frontend has no router yet — single page with state-based view switching. Add react-router when Phase 6 (API key registration page) is needed.
-- USASpending PIID lookup: direct /api/v2/awards/{piid}/ returns 404 for this format. Use generated_unique_award_id format: CONT_AWD_{piid_no_dashes}_{agency_code}_-NONE-_-NONE-
-- FPDS ezsearch endpoint is DEAD. Replacement: SAM.gov Contract Awards API → https://open.gsa.gov/api/contract-awards/
-  Full variance doc from FPDS legacy → SAM API: linked from that page. Requires SAM_API_KEY (same free key as opportunities).
-  Use this in Phase 4 enrich_fpds.py — rename to enrich_contracts.py. Endpoint: api.sam.gov/prod/contractawards/v1/
-  This fills in: contracting officer name, modification history, pricing details — everything FPDS used to provide.
-  ⚠️ DO NOT FORGET — Phase 4 enrichment depends on this.
-- DO PostgreSQL SSL: set NODE_TLS_REJECT_UNAUTHORIZED=0 in server.js (self-signed cert). Already done.
-- API server: start with `cd ~/awardopedia/server && node server.js`
-- Dev server: start with `cd ~/awardopedia/web && npm run dev`
-- API is proxied via Vite: frontend calls /api/* → localhost:3001
+- ⚠️ api_keys + dead_links tables owned by doadmin. Run in DO console BEFORE Phase 6:
+    ALTER TABLE api_keys OWNER TO awardopedia_user;
+    ALTER TABLE dead_links OWNER TO awardopedia_user;
+- cron is broken on this Mac mini. Always use LaunchAgents (launchctl) instead.
+- USASpending award detail: use generated_internal_id from search results, NOT constructed URL.
+  Pattern: CONT_AWD_{PIID}_{AgencyCode}_{ParentPIID}_{ParentAgencyCode}
+- SAM.gov rate limit: 10 calls/day (personal key, no role). Resets midnight UTC = 6pm MDT.
+- DO PostgreSQL SSL: NODE_TLS_REJECT_UNAUTHORIZED=0 required in Node.js.
+- FPDS ezsearch is DEAD. Use SAM.gov Contract Awards API: api.sam.gov/contract-awards/v1/search
+- Report architecture: Claude API → XML sections → stored as JSONB in reports table → 90-day cache
+- Frontend has no react-router — uses state-based view switching. Add router in Phase 6 for /api page.
+- DB admin credentials in ~/awardopedia/.env (DO_TOKEN, doadmin password etc.)
+- Stripe payment link (one-time $6): https://buy.stripe.com/9B628ka2m6w90ViegT83C01 (Phase 8)
+
+## Phase 6 — what to build
+Per MASTER_PROMPT.md:
+1. Public read API at /api/v1/* (separate from existing /api/* internal routes)
+   - GET /api/v1/contracts (filters: agency, naics, state, set_aside, expiring_within_days, min_amount, max_amount, q)
+   - GET /api/v1/contracts/:piid
+   - GET /api/v1/opportunities (filters: agency, naics, state, set_aside, deadline_within_days, is_recompete)
+   - GET /api/v1/opportunities/:notice_id
+   - GET /api/v1/stats
+   - All responses wrapped in {data, meta: {source, attribution, api_docs, last_updated, total_results, page, limit}}
+   - Rate limits: 1,000/day, 5,000/week per key. 429 response with retry_after on exceed.
+2. API key registration page (web/src/pages/ApiKeys.jsx)
+   - Form: name, email, organization, use_case
+   - Server generates key, emails via SendGrid, stores hashed in api_keys table
+   - No credit card
+3. llms.txt at /web/public/llms.txt (served at awardopedia.com/llms.txt)
+4. Terms of Service page (web/src/pages/Terms.jsx) + ~/awardopedia/TERMS_OF_SERVICE.md
 
 ## Ralph Loop
-- scripts/ralph/ralph.sh — the loop runner (max 3 iterations, claude tool default)
-- scripts/ralph/CLAUDE.md — per-iteration instructions Claude Code reads on startup
-- scripts/ralph/progress.txt — iteration history + codebase patterns
-- To run: `cd ~/awardopedia && ./scripts/ralph/ralph.sh 1` (one iteration at a time)
-- ralph.sh is capped at 3 iterations max. Never run unattended overnight.
-
-## Files changed (Phase 0)
-- ~/awardopedia/MASTER_PROMPT.md (new)
-- ~/awardopedia/MEMORY.md (new)
-- ~/awardopedia/PROGRESS.md (new)
-- ~/awardopedia/prd.json (new)
-- ~/awardopedia/migrations/001_initial_schema.sql (new)
-- ~/awardopedia/web/ (new — React+Vite scaffold)
-- ~/awardopedia/web/src/tokens.css
-- ~/awardopedia/web/src/index.css
-- ~/awardopedia/web/src/App.jsx
-- ~/awardopedia/web/src/components/Nav.jsx
-- ~/awardopedia/web/src/components/ContractDetail.jsx
-- ~/awardopedia/web/src/components/OpportunityDetail.jsx
+- scripts/ralph/ralph.sh — loop runner (max 3 iterations, claude tool default)
+- scripts/ralph/CLAUDE.md — per-iteration instructions
+- scripts/ralph/progress.txt — iteration history
+- Run: cd ~/awardopedia && ./scripts/ralph/ralph.sh 1
+- HARD STOPS: prod DB migrations, deletions, paid API calls, infra changes
