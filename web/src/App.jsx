@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import Nav from './components/Nav'
 import ContractDetail from './components/ContractDetail'
 import OpportunityDetail from './components/OpportunityDetail'
+import Terms from './pages/Terms'
+import ApiKeys from './pages/ApiKeys'
 import './index.css'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -64,7 +66,11 @@ export default function App() {
     load()
   }, [])
 
-  const activeTab = view === 'contracts' || view === 'contract-detail' ? 'contracts' : 'opportunities'
+  const activeTab = view === 'contracts' || view === 'contract-detail' ? 'contracts'
+    : view === 'opportunities' || view === 'opp-detail' ? 'opportunities'
+    : view === 'api' ? 'api'
+    : view === 'terms' ? 'terms'
+    : 'contracts'
 
   return (
     <div>
@@ -72,7 +78,7 @@ export default function App() {
         activePage={activeTab}
         onHome={() => setView('contracts')}
         onNavigate={(page) => {
-          if (page === 'contracts' || page === 'opportunities') setView(page)
+          if (['contracts', 'opportunities', 'api', 'terms'].includes(page)) setView(page)
         }}
       />
 
@@ -219,13 +225,26 @@ export default function App() {
         />
       )}
 
+      {/* ── API Keys page ── */}
+      {view === 'api' && (
+        <ApiKeys onBack={(target) => {
+          if (target === 'terms') setView('terms')
+          else setView('contracts')
+        }} />
+      )}
+
+      {/* ── Terms page ── */}
+      {view === 'terms' && (
+        <Terms onBack={() => setView('contracts')} />
+      )}
+
       {/* Footer */}
       {(view === 'contracts' || view === 'opportunities') && (
         <footer className="footer">
           <div className="container">
             <div className="footer-inner">
               <span><strong>Awardopedia</strong> — The encyclopedia of federal contract awards.</span>
-              <span>Data from USASpending.gov and SAM.gov · <a href="#">API</a> · <a href="#">Terms</a></span>
+              <span>Data from USASpending.gov and SAM.gov · <a href="#" onClick={(e) => { e.preventDefault(); setView('api') }}>API</a> · <a href="#" onClick={(e) => { e.preventDefault(); setView('terms') }}>Terms</a></span>
             </div>
           </div>
         </footer>

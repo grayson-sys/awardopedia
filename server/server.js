@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { randomBytes, createHash } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -700,6 +701,300 @@ app.post('/api/reports/generate-opportunity', async (req, res) => {
     res.json({ cached: false, generated_at: new Date().toISOString(), usage: message.usage, sections })
   } catch (e) {
     console.error('Opportunity report error:', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// PUBLIC API v1 — requires API key, rate-limited
+// ═══════════════════════════════════════════════════════════════════
+
+const SENDGRID_API_KEY = envVars.SENDGRID_API_KEY || process.env.SENDGRID_API_KEY
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function hashKey(plain) {
+  return createHash('sha256').update(plain).digest('hex')
+}
+
+function apiMeta(extra = {}) {
+  return {
+    source: 'Awardopedia.com',
+    attribution: 'Data from USASpending.gov and SAM.gov, organized by Awardopedia.com. Free federal contract intelligence.',
+    api_docs: 'https://awardopedia.com/api',
+    ...extra
+  }
+}
+
+// ─── Rate limiter (in-memory, resets on restart) ─────────────────
+const rateBuckets = new Map() // key_hash -> { day: count, dayStart: ts, week: count, weekStart: ts }
+const DAY_LIMIT = 1000
+const WEEK_LIMIT = 5000
+
+function checkRateLimit(keyHash) {
+  const now = Date.now()
+  let b = rateBuckets.get(keyHash)
+  if (!b) {
+    b = { day: 0, dayStart: now, week: 0, weekStart: now }
+    rateBuckets.set(keyHash, b)
+  }
+  // Reset day bucket after 24h
+  if (now - b.dayStart > 86400000) { b.day = 0; b.dayStart = now }
+  // Reset week bucket after 7 days
+  if (now - b.weekStart > 604800000) { b.week = 0; b.weekStart = now }
+
+  if (b.day >= DAY_LIMIT) {
+    const retryAfter = Math.ceil((b.dayStart + 86400000 - now) / 1000)
+    return { allowed: false, retryAfter, message: `You have reached your daily limit of ${DAY_LIMIT} requests. Limit resets at midnight UTC. To increase your limit, contact api@awardopedia.com` }
+  }
+  if (b.week >= WEEK_LIMIT) {
+    const retryAfter = Math.ceil((b.weekStart + 604800000 - now) / 1000)
+    return { allowed: false, retryAfter, message: `You have reached your weekly limit of ${WEEK_LIMIT} requests. To increase your limit, contact api@awardopedia.com` }
+  }
+  b.day++
+  b.week++
+  return { allowed: true }
+}
+
+// ─── API key auth middleware ─────────────────────────────────────
+async function requireApiKey(req, res, next) {
+  const key = req.headers['x-awardopedia-key']
+  if (!key) {
+    return res.status(401).json({ error: 'API key required. Get a free key at https://awardopedia.com/api' })
+  }
+  const hashed = hashKey(key)
+  try {
+    const { rows } = await pool.query(
+      'SELECT id FROM api_keys WHERE key_hash = $1 AND revoked = false',
+      [hashed]
+    )
+    if (!rows.length) {
+      return res.status(403).json({ error: 'Invalid or revoked API key' })
+    }
+    // Rate limit check
+    const rl = checkRateLimit(hashed)
+    if (!rl.allowed) {
+      res.setHeader('Retry-After', rl.retryAfter)
+      return res.status(429).json({ error: 'Rate limit exceeded', message: rl.message, retry_after: rl.retryAfter })
+    }
+    // Track usage
+    pool.query('UPDATE api_keys SET last_used = NOW(), request_count = request_count + 1 WHERE key_hash = $1', [hashed]).catch(() => {})
+    next()
+  } catch (e) {
+    res.status(500).json({ error: 'Auth check failed' })
+  }
+}
+
+// ─── GET /api/v1/contracts ───────────────────────────────────────
+app.get('/api/v1/contracts', requireApiKey, async (req, res) => {
+  try {
+    const { agency, naics, state, set_aside, expiring_within_days, min_amount, max_amount, q, page: pg_, limit: lim_ } = req.query
+    const page = Math.max(1, parseInt(pg_) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(lim_) || 25))
+    const offset = (page - 1) * limit
+
+    const conditions = []
+    const params = []
+    let idx = 1
+
+    if (agency) { conditions.push(`agency_name ILIKE $${idx}`); params.push(`%${agency}%`); idx++ }
+    if (naics) { conditions.push(`naics_code = $${idx}`); params.push(naics); idx++ }
+    if (state) { conditions.push(`recipient_state = $${idx}`); params.push(state.toUpperCase()); idx++ }
+    if (set_aside) { conditions.push(`set_aside_type ILIKE $${idx}`); params.push(`%${set_aside}%`); idx++ }
+    if (expiring_within_days) { conditions.push(`end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $${idx}::int`); params.push(parseInt(expiring_within_days)); idx++ }
+    if (min_amount) { conditions.push(`award_amount >= $${idx}`); params.push(parseFloat(min_amount)); idx++ }
+    if (max_amount) { conditions.push(`award_amount <= $${idx}`); params.push(parseFloat(max_amount)); idx++ }
+    if (q) { conditions.push(`(description ILIKE $${idx} OR recipient_name ILIKE $${idx} OR agency_name ILIKE $${idx})`); params.push(`%${q}%`); idx++ }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+
+    // Count total
+    const countRes = await pool.query(`SELECT COUNT(*) FROM contracts ${where}`, params)
+    const total = parseInt(countRes.rows[0].count)
+
+    // Fetch page
+    const dataRes = await pool.query(
+      `SELECT piid, award_id, description, naics_code, naics_description, psc_code, llama_summary,
+              agency_name, sub_agency_name, office_name, recipient_name, recipient_uei,
+              recipient_city, recipient_state, business_size, is_small_business,
+              award_amount, base_amount, ceiling_amount, start_date, end_date,
+              (end_date - CURRENT_DATE) AS days_to_expiry, set_aside_type, competition_type,
+              contract_type, extent_competed, usaspending_url, data_source, last_synced, created_at
+       FROM contracts ${where}
+       ORDER BY end_date ASC NULLS LAST
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
+    )
+
+    res.json({
+      data: dataRes.rows,
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit })
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── GET /api/v1/contracts/:piid ─────────────────────────────────
+app.get('/api/v1/contracts/:piid', requireApiKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT *, (end_date - CURRENT_DATE) AS days_to_expiry FROM contracts WHERE piid = $1`,
+      [req.params.piid]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Contract not found' })
+    res.json({
+      data: rows[0],
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: 1, page: 1, limit: 1 })
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── GET /api/v1/opportunities ───────────────────────────────────
+app.get('/api/v1/opportunities', requireApiKey, async (req, res) => {
+  try {
+    const { agency, naics, state, set_aside, deadline_within_days, is_recompete, q, page: pg_, limit: lim_ } = req.query
+    const page = Math.max(1, parseInt(pg_) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(lim_) || 25))
+    const offset = (page - 1) * limit
+
+    const conditions = []
+    const params = []
+    let idx = 1
+
+    if (agency) { conditions.push(`agency_name ILIKE $${idx}`); params.push(`%${agency}%`); idx++ }
+    if (naics) { conditions.push(`naics_code = $${idx}`); params.push(naics); idx++ }
+    if (state) { conditions.push(`place_of_performance_state = $${idx}`); params.push(state.toUpperCase()); idx++ }
+    if (set_aside) { conditions.push(`set_aside_type ILIKE $${idx}`); params.push(`%${set_aside}%`); idx++ }
+    if (deadline_within_days) { conditions.push(`response_deadline BETWEEN CURRENT_DATE AND CURRENT_DATE + $${idx}::int`); params.push(parseInt(deadline_within_days)); idx++ }
+    if (is_recompete === 'true') { conditions.push('is_recompete = true') }
+    if (is_recompete === 'false') { conditions.push('is_recompete = false') }
+    if (q) { conditions.push(`(title ILIKE $${idx} OR agency_name ILIKE $${idx} OR description ILIKE $${idx})`); params.push(`%${q}%`); idx++ }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+
+    const countRes = await pool.query(`SELECT COUNT(*) FROM opportunities ${where}`, params)
+    const total = parseInt(countRes.rows[0].count)
+
+    const dataRes = await pool.query(
+      `SELECT notice_id, title, solicitation_number, notice_type, agency_name, sub_agency_name,
+              office_name, naics_code, naics_description, psc_code, set_aside_type,
+              estimated_value_min, estimated_value_max, contract_type,
+              posted_date, response_deadline, archive_date,
+              (response_deadline - CURRENT_DATE) AS days_to_deadline,
+              place_of_performance_city, place_of_performance_state,
+              is_recompete, incumbent_name, sam_url, llama_summary,
+              data_source, last_synced, created_at
+       FROM opportunities ${where}
+       ORDER BY response_deadline ASC NULLS LAST
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
+    )
+
+    res.json({
+      data: dataRes.rows,
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit })
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── GET /api/v1/opportunities/:notice_id ────────────────────────
+app.get('/api/v1/opportunities/:notice_id', requireApiKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT *, (response_deadline - CURRENT_DATE) AS days_to_deadline FROM opportunities WHERE notice_id = $1`,
+      [req.params.notice_id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Opportunity not found' })
+    res.json({
+      data: rows[0],
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: 1, page: 1, limit: 1 })
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── GET /api/v1/stats ───────────────────────────────────────────
+app.get('/api/v1/stats', requireApiKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM contracts) AS total_contracts,
+        (SELECT COALESCE(SUM(award_amount), 0) FROM contracts) AS total_obligated,
+        (SELECT COUNT(*) FROM opportunities) AS total_opportunities,
+        NOW() AS last_updated
+    `)
+    res.json({
+      data: rows[0],
+      meta: apiMeta({ last_updated: rows[0].last_updated })
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── POST /api/v1/register — API key registration ───────────────
+app.post('/api/v1/register', async (req, res) => {
+  const { name, email, organization, use_case } = req.body
+  if (!name || !email || !use_case) {
+    return res.status(400).json({ error: 'name, email, and use_case are required' })
+  }
+  // Basic email validation
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email address' })
+  }
+
+  try {
+    // Check for existing key with this email
+    const { rows: existing } = await pool.query(
+      'SELECT id FROM api_keys WHERE email = $1 AND revoked = false',
+      [email]
+    )
+    if (existing.length) {
+      return res.status(409).json({ error: 'An API key already exists for this email. Contact api@awardopedia.com to recover it.' })
+    }
+
+    // Generate key: aw_ prefix + 32 random hex chars
+    const plainKey = 'aw_' + randomBytes(16).toString('hex')
+    const keyHash = hashKey(plainKey)
+
+    await pool.query(
+      `INSERT INTO api_keys (key_hash, name, email, organization, use_case, created_at, last_used, request_count, revoked)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NULL, 0, false)`,
+      [keyHash, name, email, organization || null, use_case]
+    )
+
+    // Send email with key (if SendGrid configured)
+    if (SENDGRID_API_KEY) {
+      try {
+        const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personalizations: [{ to: [{ email, name }] }],
+            from: { email: 'api@awardopedia.com', name: 'Awardopedia' },
+            subject: 'Your Awardopedia API Key',
+            content: [{
+              type: 'text/plain',
+              value: `Hi ${name},\n\nYour Awardopedia API key is:\n\n${plainKey}\n\nPass it via the X-Awardopedia-Key header.\n\nBase URL: https://api.awardopedia.com/v1/\nDocs: https://awardopedia.com/api\nRate limits: 1,000 req/day, 5,000 req/week\n\nHappy building!\n— Awardopedia`
+            }]
+          })
+        })
+        if (!sgRes.ok) console.error('SendGrid error:', sgRes.status, await sgRes.text())
+      } catch (sgErr) {
+        console.error('SendGrid send failed:', sgErr.message)
+      }
+    } else {
+      console.log('[API Key] SendGrid not configured — key generated but email not sent. Key:', plainKey.slice(0, 8) + '...')
+    }
+
+    res.json({ api_key: plainKey, message: 'Key generated successfully. Store it securely — it cannot be recovered.' })
+  } catch (e) {
+    console.error('Registration error:', e)
     res.status(500).json({ error: e.message })
   }
 })
