@@ -18,28 +18,28 @@
     "title": "One perfect upcoming opportunity record",
     "description": "Fetch one real solicitation from SAM.gov API, insert into DB, display in UI end-to-end.",
     "acceptance_criteria": "Single real opportunity record in DB. Opportunity row renders. Click-in detail shows all fields. Recompete badge works if applicable.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 3,
     "title": "LLAMA summaries",
     "description": "Pull llama3.2:3b via Ollama. Write summarize.py. Generate one-sentence summaries for the Phase 1 and Phase 2 records. Display in UI replacing placeholders.",
     "acceptance_criteria": "llama3.2:3b downloaded and running. summarize.py generates summaries. Both records have llama_summary populated. UI shows real summaries.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 4,
     "title": "Always-on background scripts",
     "description": "Write ingest_contracts.py, enrich_fpds.py, sync_opportunities.py, summarize_batch.py. Test each with --limit 10. Set up cron on Mac Mini.",
     "acceptance_criteria": "Each script runs with --limit 10 without errors. Progress tracked in JSON file. Resumable if interrupted. Cron entries installed.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 5,
     "title": "Weekly dead link checker",
     "description": "Write check_links.py. Checks usaspending_alive and sam_url_alive fields. Sends weekly email via SendGrid. Logs to dead_links table.",
     "acceptance_criteria": "Script runs without errors. Dead links marked in DB. Weekly summary email generated.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 6,

@@ -25,3 +25,14 @@ Started: 2025-03-17
 
 - Link verification: NEVER store a URL without verifying it first (HEAD request, expect 200).
   Check usaspending_alive and sam_url_alive before insert. Update checked timestamp.
+
+## 2026-03-18 — Phases 2–5: Completed (direct build session, not Ralph)
+- Phase 2: Opportunity detail UI + API routes (OpportunityDetail.jsx, /api/reports/generate-opportunity, /api/reports/opportunity/:id)
+- Phase 3: summarize.py + summarize_batch.py — Ollama/llama3.2:3b working, ~4-5s/record
+- Phase 4: ingest_contracts.py (USASpending, resumable, progress JSON), enrich_fpds.py (SAM.gov CO data), sync_opportunities.py (daily delta), summarize_batch.py. LaunchAgents installed (NOT cron — cron is broken on this Mac mini, use launchctl)
+- Phase 5: check_links.py — concurrent (10 threads), time-boxed (3h), prioritized by age, rate-limited (100/min), SendGrid email, Sunday 3am LaunchAgent
+- Known gotcha: api_keys + dead_links tables created by doadmin due to failed first-run transactions. Run: ALTER TABLE api_keys OWNER TO awardopedia_user; ALTER TABLE dead_links OWNER TO awardopedia_user; in DO console
+- Known gotcha: crontab hangs on writes — use LaunchAgents instead
+- Build: passing on all commits
+- Next: Phase 6 — Public API + API keys + llms.txt + TOS
+---
