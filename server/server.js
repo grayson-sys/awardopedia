@@ -234,11 +234,21 @@ app.get('/api/reports/print/:piid', async (req, res) => {
   .disclaimer strong { color: #6B7280; }
 
   /* Print */
+  @page {
+    size: letter;
+    margin: 0.65in 0.75in 0.75in;
+  }
   @media print {
-    body { padding: 0; }
-    .page { padding: 0.6in 0.75in 0.75in; max-width: 100%; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    .page { padding: 0; max-width: 100%; }
     .no-print { display: none !important; }
+    .print-bar { display: none !important; }
     .section { page-break-inside: avoid; }
+    .summary-bar { page-break-inside: avoid; }
+    .header { page-break-after: avoid; }
+    a { color: inherit; text-decoration: none; }
+    /* Suppress browser header/footer chrome */
+    @page { margin: 0.65in 0.75in 0.75in; }
   }
 
   /* Screen only — print button */
@@ -339,9 +349,22 @@ CRITICAL RULES:
 - Every section must be present, even if data is limited.
 - Executive summary: exactly 2-3 sentences.
 - Recommended action: must start with exactly one of: "BID", "TEAM", or "PASS" — then explain why.
-- Be specific: use dollar amounts, agency names, dates from the data provided.
-- Do not speculate beyond the data. If data is missing, say "Data not available."
-- End every report with the attribution line exactly as shown.`
+- End every report with the attribution line exactly as shown.
+
+SOURCE DISCIPLINE — this is mandatory:
+You have two types of knowledge. You must use different language for each.
+
+TYPE 1 — CONTRACT DATA: Facts directly from the record provided (amounts, dates, agency names, NAICS, recipient, set-aside type, description). State these as facts. No hedging.
+
+TYPE 2 — MARKET KNOWLEDGE: General knowledge about federal contracting, agencies, NAICS sectors, small business programs, and competitive dynamics that is NOT in the record provided. You MUST signal these clearly with phrases like:
+  "Based on general patterns in this sector..."
+  "Agencies like [X] typically..."
+  "In the federal contracting market, firms competing for [NAICS] work generally..."
+  "This is common practice, though not confirmed for this specific contract..."
+
+NEVER present market knowledge as specific fact about this contract. NEVER invent specific past contract relationships, specific clearances held, or specific personnel without citing the contract data. If you do not know something, say "Not available in the contract record."
+
+Be conservative. A cautious analysis that is 100% defensible is worth more than a confident analysis that overstates what the data shows.`
 
 function buildContractPrompt(c) {
   const days = c.days_to_expiry != null ? `${c.days_to_expiry} days` : 'unknown'

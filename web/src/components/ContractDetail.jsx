@@ -30,17 +30,25 @@ const SECTION_LABELS = {
   attribution: null, // rendered separately
 }
 
-function ReportView({ sections, cached, generatedAt }) {
+function ReportView({ sections, generatedAt }) {
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span className="badge badge-success">Report Ready</span>
-        {cached && <span className="text-sm text-muted">Cached</span>}
         {generatedAt && (
           <span className="text-sm text-muted">
             Generated {new Date(generatedAt).toLocaleDateString()}
           </span>
         )}
+      </div>
+      <div style={{
+        fontSize: 11,
+        color: 'var(--color-muted)',
+        fontStyle: 'italic',
+        marginBottom: 14,
+        lineHeight: 1.5
+      }}>
+        Verified data from USASpending.gov. Market analysis and recommendations are AI-generated assessments — not verified competitive intelligence.
       </div>
 
       {/* Recommended Action — prominent first */}
@@ -296,7 +304,6 @@ export default function ContractDetail({ contract, onBack }) {
             {report?.sections && (
               <ReportView
                 sections={report.sections}
-                cached={report.cached}
                 generatedAt={report.generated_at}
               />
             )}

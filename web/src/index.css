@@ -283,3 +283,16 @@ a:hover { text-decoration: underline; }
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ── Print styles (main app) ────────────────────────────── */
+@media print {
+  @page { margin: 0.65in 0.75in; size: letter; }
+  html, body { margin: 0; padding: 0; background: #fff; font-size: 10pt; }
+  .nav, .tabs, .footer, .btn, .back-btn { display: none !important; }
+  .page-header { border: none; padding: 8px 0; }
+  .page-header h1 { font-size: 14pt; }
+  .card { border: 1px solid #ccc; box-shadow: none; margin-bottom: 10px; }
+  .detail-layout { grid-template-columns: 1fr; }
+  .section { page-break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
