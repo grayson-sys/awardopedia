@@ -181,8 +181,26 @@ export default function ContractDetail({ contract, onBack }) {
                 </div>
                 <div className="field">
                   <span className="field-label">PSC</span>
-                  <span className="field-value">{contract.psc_code || '—'}</span>
+                  <span className="field-value">{contract.psc_code || '—'}{contract.psc_description ? ` — ${contract.psc_description}` : ''}</span>
                 </div>
+                {contract.solicitation_number && (
+                  <div className="field">
+                    <span className="field-label">Solicitation #</span>
+                    <span className="field-value mono">
+                      <a href={`https://sam.gov/search/?keywords=${contract.solicitation_number}&index=opp`}
+                         target="_blank" rel="noreferrer"
+                         style={{ color: 'var(--color-navy)' }}>
+                        {contract.solicitation_number} ↗
+                      </a>
+                    </span>
+                  </div>
+                )}
+                {contract.major_program && (
+                  <div className="field">
+                    <span className="field-label">Major Program</span>
+                    <span className="field-value">{contract.major_program}</span>
+                  </div>
+                )}
               </div>
               {contract.description && (
                 <div className="field mt-16">
@@ -238,6 +256,14 @@ export default function ContractDetail({ contract, onBack }) {
                   </span>
                 </div>
                 <div className="field">
+                  <span className="field-label">Date Signed</span>
+                  <span className="field-value">{contract.date_signed || '—'}</span>
+                </div>
+                <div className="field">
+                  <span className="field-label">Last Modified</span>
+                  <span className="field-value">{contract.last_modified_date || '—'}</span>
+                </div>
+                <div className="field">
                   <span className="field-label">Fiscal Year</span>
                   <span className="field-value">{contract.fiscal_year || '—'}</span>
                 </div>
@@ -263,6 +289,34 @@ export default function ContractDetail({ contract, onBack }) {
                 <div className="field">
                   <span className="field-label">Number of Offers</span>
                   <span className="field-value mono">{contract.number_of_offers ?? '—'}</span>
+                </div>
+                {contract.sole_source_authority && (
+                  <div className="field">
+                    <span className="field-label">Legal Basis</span>
+                    <span className="field-value">{contract.sole_source_authority}</span>
+                  </div>
+                )}
+                {contract.solicitation_procedures && (
+                  <div className="field">
+                    <span className="field-label">Solicitation Procedures</span>
+                    <span className="field-value">{contract.solicitation_procedures}</span>
+                  </div>
+                )}
+                {contract.commercial_item && (
+                  <div className="field">
+                    <span className="field-label">Commercial Item</span>
+                    <span className="field-value">{contract.commercial_item}</span>
+                  </div>
+                )}
+                {contract.subcontracting_plan && (
+                  <div className="field">
+                    <span className="field-label">Subcontracting Plan</span>
+                    <span className="field-value">{contract.subcontracting_plan}</span>
+                  </div>
+                )}
+                <div className="field">
+                  <span className="field-label">Labor Standards</span>
+                  <span className="field-value">{contract.labor_standards === true ? 'Yes' : contract.labor_standards === false ? 'No' : '—'}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">Contracting Officer</span>
@@ -294,11 +348,73 @@ export default function ContractDetail({ contract, onBack }) {
                   </span>
                 </div>
                 <div className="field">
-                  <span className="field-label">City / State</span>
-                  <span className="field-value">{[contract.recipient_city, contract.recipient_state].filter(Boolean).join(', ') || '—'}</span>
+                  <span className="field-label">Address</span>
+                  <span className="field-value">
+                    {[contract.recipient_address, contract.recipient_city, contract.recipient_state, contract.recipient_zip].filter(Boolean).join(', ') || '—'}
+                  </span>
+                </div>
+                {contract.recipient_county && (
+                  <div className="field">
+                    <span className="field-label">County</span>
+                    <span className="field-value">{contract.recipient_county}</span>
+                  </div>
+                )}
+                {contract.recipient_congressional_district && (
+                  <div className="field">
+                    <span className="field-label">Congressional District</span>
+                    <span className="field-value">{contract.recipient_state}-{contract.recipient_congressional_district}</span>
+                  </div>
+                )}
+              </div>
+              {contract.business_categories && (
+                <div className="field mt-16">
+                  <span className="field-label">Business Classifications</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {(Array.isArray(contract.business_categories)
+                      ? contract.business_categories
+                      : JSON.parse(contract.business_categories)
+                    ).map(cat => (
+                      <span key={cat} style={{
+                        background: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 4,
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        color: 'var(--color-muted)'
+                      }}>{cat}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Place of Performance */}
+            {contract.pop_city && (
+              <div className="card">
+                <div className="section-title">Place of Performance</div>
+                <p style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12, fontStyle: 'italic' }}>
+                  Where the work actually happens — may differ from contractor's home office.
+                </p>
+                <div className="field-grid">
+                  <div className="field">
+                    <span className="field-label">City / State</span>
+                    <span className="field-value">{[contract.pop_city, contract.pop_state, contract.pop_zip].filter(Boolean).join(', ')}</span>
+                  </div>
+                  {contract.pop_county && (
+                    <div className="field">
+                      <span className="field-label">County</span>
+                      <span className="field-value">{contract.pop_county}</span>
+                    </div>
+                  )}
+                  {contract.pop_congressional_district && (
+                    <div className="field">
+                      <span className="field-label">Congressional District</span>
+                      <span className="field-value">{contract.pop_state}-{contract.pop_congressional_district}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* AI Report — expands in main column when generated */}
             {report?.sections && (
