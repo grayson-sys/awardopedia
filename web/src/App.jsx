@@ -137,6 +137,11 @@ export default function App() {
                       <td>
                         <div style={{ fontWeight: 500 }}>{c.recipient_name || '—'}</div>
                         <div className="piid">{c.piid}</div>
+                        {c.llama_summary && (
+                          <div className="text-muted text-sm" style={{ marginTop: 2, maxWidth: 320, lineHeight: 1.35 }}>
+                            {c.llama_summary.split('.')[0]}.
+                          </div>
+                        )}
                       </td>
                       <td>{c.naics_code ? <span className="badge badge-muted">{c.naics_code}</span> : '—'}</td>
                       <td>{c.set_aside_type ? <span className="badge badge-navy" style={{ fontSize: 10 }}>{c.set_aside_type}</span> : '—'}</td>
