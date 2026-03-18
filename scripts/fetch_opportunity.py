@@ -364,6 +364,11 @@ if __name__ == '__main__':
 
         if not args.no_summary:
             run_ollama_summary_opp(notice_id)
+            try:
+                from generate_static import generate_page_for_opportunity
+                generate_page_for_opportunity(notice_id)
+            except Exception as e:
+                print(f"  [static page] skipped: {e}")
 
         time.sleep(0.3)
 

@@ -562,6 +562,90 @@ def mark_static_generated(conn, table, id_col, record_id, static_url):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def generate_page_for_piid(piid: str) -> bool:
+    """
+    Generate and upload a static page for a single contract.
+    Called from the ingest pipeline after Ollama summary is written.
+    Returns True on success, False on failure (never raises).
+    """
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM contracts WHERE piid = %s", [piid])
+        row = cur.fetchone()
+        if not row:
+            print(f"  [static] {piid} not found in DB — skipping")
+            conn.close()
+            return False
+
+        c = dict(row)
+        html = generate_contract_html(c)
+        CONTRACTS_DIR.mkdir(parents=True, exist_ok=True)
+        fpath = CONTRACTS_DIR / f"{piid}.html"
+        fpath.write_text(html, encoding='utf-8')
+
+        s3 = make_s3_client()
+        remote_key = f"contracts/{piid}.html"
+        bucket = os.environ.get('DO_SPACES_BUCKET', 'awardopedia-static')
+        region = os.environ.get('DO_SPACES_REGION', 'nyc3')
+        static_url = f"https://{bucket}.{region}.digitaloceanspaces.com/{remote_key}"
+
+        if s3:
+            upload_file(s3, fpath, remote_key)
+            mark_static_generated(conn, 'contracts', 'piid', piid, static_url)
+            print(f"  [static] {piid} → uploaded ✓")
+        else:
+            print(f"  [static] {piid} → {fpath} (no S3 client)")
+
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"  [static] {piid} failed: {e}")
+        return False
+
+
+def generate_page_for_opportunity(notice_id: str) -> bool:
+    """
+    Generate and upload a static page for a single opportunity.
+    Called from the ingest pipeline after Ollama summary is written.
+    Returns True on success, False on failure (never raises).
+    """
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM opportunities WHERE notice_id = %s", [notice_id])
+        row = cur.fetchone()
+        if not row:
+            print(f"  [static] {notice_id} not found in DB — skipping")
+            conn.close()
+            return False
+
+        o = dict(row)
+        html = generate_opportunity_html(o)
+        OPPORTUNITIES_DIR.mkdir(parents=True, exist_ok=True)
+        fpath = OPPORTUNITIES_DIR / f"{notice_id}.html"
+        fpath.write_text(html, encoding='utf-8')
+
+        s3 = make_s3_client()
+        remote_key = f"opportunities/{notice_id}.html"
+        bucket = os.environ.get('DO_SPACES_BUCKET', 'awardopedia-static')
+        region = os.environ.get('DO_SPACES_REGION', 'nyc3')
+        static_url = f"https://{bucket}.{region}.digitaloceanspaces.com/{remote_key}"
+
+        if s3:
+            upload_file(s3, fpath, remote_key)
+            mark_static_generated(conn, 'opportunities', 'notice_id', notice_id, static_url)
+            print(f"  [static] {notice_id} → uploaded ✓")
+        else:
+            print(f"  [static] {notice_id} → {fpath} (no S3 client)")
+
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"  [static] {notice_id} failed: {e}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate static HTML pages for Awardopedia SEO')
     parser.add_argument('--new-only', action='store_true', help='Only generate for records without static_page_generated')

@@ -262,6 +262,12 @@ if __name__ == '__main__':
                 if is_new and not args.no_summary:
                     run_ollama_summary(piid)
                     print(f" + summary", end='')
+                    try:
+                        from generate_static import generate_page_for_piid
+                        generate_page_for_piid(piid)
+                        print(f" + page", end='')
+                    except Exception as e:
+                        pass  # non-fatal
 
                 print()
 

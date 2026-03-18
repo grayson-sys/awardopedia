@@ -177,6 +177,11 @@ if __name__ == '__main__':
 
             if is_new and not args.no_summary:
                 run_ollama_summary_opp(notice_id)
+                try:
+                    from generate_static import generate_page_for_opportunity
+                    generate_page_for_opportunity(notice_id)
+                except Exception as e:
+                    pass  # non-fatal
 
         except Exception as e:
             print(f"  ✗ DB error: {e}")

@@ -267,5 +267,11 @@ if __name__ == '__main__':
     if not args.no_summary:
         print("\nGenerating Ollama summary...")
         run_ollama_summary(piid)
+        print("\nGenerating static page...")
+        try:
+            from generate_static import generate_page_for_piid
+            generate_page_for_piid(piid)
+        except Exception as e:
+            print(f"  [static page] skipped: {e}")
 
     print("\nDone. Record is fully enriched.")
