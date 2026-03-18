@@ -1,7 +1,8 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
-Current phase: 7 — SEO static HTML page generation + DO Spaces + Cloudflare CDN
+Current phase: 6B — Security hardening (inserted between 6 and 7)
+NOTE: Phase 6B was added after Phase 6 completed. Ralph must do 6B before 7.
 
 ## Stack
 Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)

@@ -49,6 +49,13 @@
     "status": "complete"
   },
   {
+    "id": "6b",
+    "title": "Security hardening \u2014 rate limits, input validation, anti-scrape, headers",
+    "description": "Harden the API and site against scraping, injection, abuse, and bulk data theft. Add per-IP rate limiting, input sanitization, security headers, robots.txt, honeypot routes, pagination depth limits, and abuse logging.",
+    "acceptance_criteria": "All query params validated and sanitized. Per-IP limits enforced independent of API key. Security headers on all responses. robots.txt live. Honeypot routes log and 403. Report endpoint rate-limited separately. No stack traces in error responses. API key hashed in DB (not plaintext). Build passes clean.",
+    "status": "pending"
+  },
+  {
     "id": 7,
     "title": "SEO static HTML page generation + DO Spaces + Cloudflare CDN",
     "description": "Write generate_static.py. One HTML file per contract and opportunity. Upload to DO Spaces. Cloudflare CDN. Sitemap submitted to Google.",

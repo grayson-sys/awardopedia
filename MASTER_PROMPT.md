@@ -1325,6 +1325,136 @@ TERMS OF SERVICE:
 Commit: "Phase 6: Public API, llms.txt, TOS complete"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 6B — SECURITY HARDENING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STOP AND REPORT after this phase. Wait for "go."
+
+Goal: Harden the site against scraping, injection, 
+abuse, and bulk data theft before SEO pages go live
+and traffic increases. Think like an attacker: what
+would YOU do to steal this database or abuse this API?
+
+THREAT MODEL:
+  1. Bulk scrapers — bots paginating every record
+  2. API key farmers — hundreds of registrations 
+     to bypass rate limits
+  3. SQL injection — malicious filter params
+  4. Report endpoint abuse — flooding Claude calls 
+     (each costs real money)
+  5. IP rotation — proxies bypassing per-IP limits
+  6. Data exfiltration — sequential full-dump via API
+
+1. PER-IP RATE LIMITING (server/middleware/rateLimit.js)
+   Enforce independent of API key status.
+   Use in-memory store (Map) keyed by IP.
+   Limits:
+     /api/v1/*:              200 req/hour per IP
+     /api/register-key:      3 req/day per IP
+     /api/reports/generate*: 5 req/hour per IP
+   On exceed: 429 + Retry-After header
+   Log every rate limit hit to console with IP + endpoint.
+
+2. INPUT VALIDATION (server/middleware/validate.js)
+   Validate and sanitize ALL query parameters.
+   Allowlist approach — reject any unrecognized params.
+   Rules:
+     q (search):            max 200 chars, strip SQL chars
+     agency:                max 100 chars, alphanumeric + spaces
+     naics:                 must match /^\d{2,6}$/
+     state:                 must be 2-letter uppercase state code
+     set_aside:             allowlist of known values
+     min_amount/max_amount: must be positive integers
+     expiring_within_days:  must be integer 1-365
+     deadline_within_days:  must be integer 1-365
+     limit:                 max 100, min 1, default 25
+     page:                  max 10 (blocks full-dump scraping)
+   On invalid param: 400 with specific field error.
+   Never pass raw user input to SQL — always parameterized.
+
+3. API KEY HARDENING (check server.js Phase 6 implementation)
+   Verify keys are stored as SHA-256 hash, NOT plaintext.
+   If Phase 6 stored plaintext keys: migrate now.
+   Key format must be: aw_live_[32 random hex chars]
+   One key per email address (enforce at registration).
+   Key prefix (first 8 chars) stored for display/support.
+
+4. SECURITY HEADERS (server/middleware/securityHeaders.js)
+   Add to ALL responses:
+     X-Content-Type-Options: nosniff
+     X-Frame-Options: DENY
+     X-XSS-Protection: 1; mode=block
+     Referrer-Policy: strict-origin-when-cross-origin
+     X-Powered-By: (remove this header — don't advertise Express)
+   For API responses only:
+     Access-Control-Allow-Origin: https://awardopedia.com
+     (also allow localhost:5173 in development)
+
+5. PAGINATION DEPTH LIMIT
+   Already enforced by validator (page max 10 = 1000 records).
+   Add X-Total-Pages header to responses.
+   If requester tries page > 10: return 403 with message:
+   "Bulk data access is not permitted via the public API.
+    For research use contact api@awardopedia.com"
+
+6. ROBOTS.TXT (web/public/robots.txt)
+   User-agent: *
+   Allow: /
+   Allow: /contracts
+   Allow: /opportunities
+   Allow: /api
+   Allow: /terms
+   Allow: /llms.txt
+   Disallow: /api/v1/     (don't let crawlers scrape the API)
+   Disallow: /api/reports/
+   Sitemap: https://awardopedia.com/sitemap.xml
+
+7. HONEYPOT ROUTES (in server.js)
+   These routes are never linked from the site.
+   Only bots and scanners hit them.
+   Log the IP and return 403 for:
+     /admin, /wp-admin, /phpmyadmin, /.env,
+     /.git, /config, /backup, /api/admin
+   Log format: HONEYPOT HIT: {ip} → {path} at {timestamp}
+
+8. ERROR HANDLING — no stack traces in production
+   Wrap all route handlers in try/catch.
+   In production (NODE_ENV=production):
+     Return generic: {"error": "Internal server error"}
+   In development only: include error.message
+   Never expose: SQL queries, file paths, table names,
+   stack traces, or environment variable names.
+
+9. REPORT ENDPOINT PROTECTION
+   /api/reports/generate and /api/reports/generate-opportunity
+   are expensive (each call costs Claude API money).
+   Additional guards:
+     - Require valid API key (no anonymous report generation)
+     - Per-key limit: 10 reports/day
+     - Per-IP limit: 5 reports/hour
+     - Log every generation attempt with key prefix + PIID
+
+10. ABUSE LOGGING (server/middleware/abuseLog.js)
+    Log to ~/awardopedia/logs/abuse.log:
+    Timestamp, IP, endpoint, response code, API key prefix.
+    Flag and log separately when:
+      - Same IP hits rate limit 3+ times in 1 hour
+      - Same key generates 5+ reports in 1 day
+      - Any honeypot route is hit
+      - page > 10 is requested
+    Format: JSON lines for easy parsing.
+
+TEST EACH ITEM:
+  - Hit /api/v1/contracts 201 times in a loop → should 429 at 201
+  - Pass ?naics=INJECTION' to /api/v1/contracts → should 400
+  - GET /.env → should 403 + logged
+  - GET /api/v1/contracts?page=11 → should 403
+  - Check response headers include X-Frame-Options
+  - Verify API keys in DB are hashed not plaintext
+
+Commit: "Phase 6B: Security hardening complete"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PHASE 7 — SEO STATIC HTML PAGES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
