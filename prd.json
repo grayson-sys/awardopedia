@@ -46,7 +46,7 @@
     "title": "Public read API + API key system + llms.txt + TOS",
     "description": "Build Express (or Next.js API routes) for /contracts, /opportunities, /stats. API key registration page. Rate limiting. llms.txt file. Terms of Service page.",
     "acceptance_criteria": "API returns paginated JSON with attribution meta. Rate limits enforced. API key registration works. llms.txt accessible at awardopedia.com/llms.txt. TOS page live.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 7,

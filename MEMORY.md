@@ -1,7 +1,7 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
-Current phase: 6 — Public read API + API key system + llms.txt + TOS
+Current phase: 7 — SEO static HTML page generation + DO Spaces + Cloudflare CDN
 
 ## Stack
 Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)
@@ -22,6 +22,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - Phase 3: summarize.py + summarize_batch.py — llama3.2:3b via Ollama ✅
 - Phase 4: ingest_contracts.py, enrich_fpds.py, sync_opportunities.py, summarize_batch.py + LaunchAgents ✅
 - Phase 5: check_links.py — 10-thread concurrent, 3h time-boxed, Sunday 3am LaunchAgent ✅
+- Phase 6: Public API v1, API key system, rate limiting, ApiKeys.jsx, Terms.jsx, llms.txt, TOS ✅
 
 ## Current DB state
 - contracts: 1 record (NISGAA CIOPS LLC / FA877324C0001) — waiting on 6pm SAM.gov batch for 100 more
@@ -70,22 +71,13 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - DB admin credentials in ~/awardopedia/.env (DO_TOKEN, doadmin password etc.)
 - Stripe payment link (one-time $6): https://buy.stripe.com/9B628ka2m6w90ViegT83C01 (Phase 8)
 
-## Phase 6 — what to build
-Per MASTER_PROMPT.md:
-1. Public read API at /api/v1/* (separate from existing /api/* internal routes)
-   - GET /api/v1/contracts (filters: agency, naics, state, set_aside, expiring_within_days, min_amount, max_amount, q)
-   - GET /api/v1/contracts/:piid
-   - GET /api/v1/opportunities (filters: agency, naics, state, set_aside, deadline_within_days, is_recompete)
-   - GET /api/v1/opportunities/:notice_id
-   - GET /api/v1/stats
-   - All responses wrapped in {data, meta: {source, attribution, api_docs, last_updated, total_results, page, limit}}
-   - Rate limits: 1,000/day, 5,000/week per key. 429 response with retry_after on exceed.
-2. API key registration page (web/src/pages/ApiKeys.jsx)
-   - Form: name, email, organization, use_case
-   - Server generates key, emails via SendGrid, stores hashed in api_keys table
-   - No credit card
-3. llms.txt at /web/public/llms.txt (served at awardopedia.com/llms.txt)
-4. Terms of Service page (web/src/pages/Terms.jsx) + ~/awardopedia/TERMS_OF_SERVICE.md
+## Phase 6 — COMPLETE
+All Phase 6 deliverables shipped:
+1. Public read API at /api/v1/* — 5 endpoints with filters, pagination, API key auth, rate limiting
+2. API key registration (POST /api/v1/register) + SendGrid email + ApiKeys.jsx page
+3. llms.txt at web/public/llms.txt
+4. Terms of Service: Terms.jsx + TERMS_OF_SERVICE.md
+5. App.jsx navigation wired up for API and Terms pages + footer links
 
 ## Ralph Loop
 - scripts/ralph/ralph.sh — loop runner (max 3 iterations, claude tool default)

@@ -36,3 +36,14 @@ Started: 2025-03-17
 - Build: passing on all commits
 - Next: Phase 6 — Public API + API keys + llms.txt + TOS
 ---
+
+## 2026-03-18 — Phase 6: Public read API + API key system + llms.txt + TOS
+- What was implemented:
+  - Server: /api/v1/* endpoints (contracts, opportunities, stats) with API key auth middleware, in-memory rate limiter (1k/day, 5k/week), POST /api/v1/register with SendGrid email
+  - Frontend: ApiKeys.jsx (registration form + endpoint docs + filter reference), Terms.jsx (8-section TOS page)
+  - Static: llms.txt for AI agent discoverability, TERMS_OF_SERVICE.md
+  - App.jsx: wired navigation for 'api' and 'terms' views, footer links connected
+- Files changed: server/server.js, web/src/App.jsx, web/src/pages/ApiKeys.jsx (new), web/src/pages/Terms.jsx (new), web/public/llms.txt (new), TERMS_OF_SERVICE.md (new)
+- Build result: PASS
+- Learnings: Most of Phase 6 server code was already written in a prior session — only needed to wire up the frontend routing. api_keys table ownership still needs fixing in DO console (doadmin → awardopedia_user) before registration will work in prod.
+---
