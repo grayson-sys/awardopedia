@@ -753,6 +753,11 @@ def main():
         upload_file(s3, sitemap_path, 'sitemap.xml', content_type='application/xml')
         print("Sitemap uploaded to DO Spaces")
 
+    # Also copy to web/public so awardopedia.com/sitemap.xml stays fresh
+    web_sitemap = Path(__file__).parent.parent / 'web' / 'public' / 'sitemap.xml'
+    web_sitemap.write_text(sitemap_content, encoding='utf-8')
+    print(f"Sitemap copied to {web_sitemap}")
+
     conn.close()
 
     print(f"\nDone: {generated} pages generated, {errors} errors")

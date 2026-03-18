@@ -1068,6 +1068,37 @@ app.post('/api/v1/register', registerRateLimit, async (req, res) => {
   }
 })
 
+// ── Sitemap (dynamic, served at awardopedia.com/sitemap.xml) ─────────────────
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const contracts = await query(
+      "SELECT piid, updated_at FROM contracts WHERE is_active = true ORDER BY updated_at DESC"
+    )
+    const opps = await query(
+      "SELECT notice_id, updated_at FROM opportunities ORDER BY updated_at DESC"
+    )
+    const today = new Date().toISOString().split('T')[0]
+    const urls = [
+      `  <url><loc>https://awardopedia.com</loc><lastmod>${today}</lastmod><priority>1.0</priority></url>`,
+      `  <url><loc>https://awardopedia.com/api</loc><lastmod>${today}</lastmod><priority>0.8</priority></url>`,
+      ...contracts.rows.map(r => {
+        const d = r.updated_at ? new Date(r.updated_at).toISOString().split('T')[0] : today
+        return `  <url><loc>https://awardopedia.com/contracts/${r.piid}</loc><lastmod>${d}</lastmod><priority>0.8</priority></url>`
+      }),
+      ...opps.rows.map(r => {
+        const d = r.updated_at ? new Date(r.updated_at).toISOString().split('T')[0] : today
+        return `  <url><loc>https://awardopedia.com/opportunities/${r.notice_id}</loc><lastmod>${d}</lastmod><priority>0.7</priority></url>`
+      })
+    ]
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>`
+    res.setHeader('Content-Type', 'application/xml')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.send(xml)
+  } catch (e) {
+    res.status(500).send('<!-- sitemap error -->')
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`Awardopedia API running on http://localhost:${PORT}`)
 })
