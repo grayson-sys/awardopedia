@@ -8,7 +8,7 @@ We discovered this empirically on 2026-03-17 after ~12 exploratory calls.
 
 ### What counts against the limit:
 - Any call to `api.sam.gov/opportunities/v2/search`
-- Any call to `api.sam.gov/prod/contractawards/v1/`
+- Any call to `api.sam.gov/contract-awards/v1/search`
 
 ### What does NOT count:
 - USASpending API calls (no key, no limit — use freely)

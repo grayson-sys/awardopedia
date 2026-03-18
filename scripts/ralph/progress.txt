@@ -14,7 +14,7 @@ Started: 2025-03-17
 
 ## Codebase Patterns (updated 2025-03-17)
 - FPDS enrichment: old fpds.gov/ezsearch is DEAD. Use SAM.gov Contract Awards API instead.
-  New endpoint: https://api.sam.gov/prod/contractawards/v1/
+  New endpoint: https://api.sam.gov/contract-awards/v1/search
   Docs: https://open.gsa.gov/api/contract-awards/
   Requires: SAM_API_KEY (same free key used for Phase 2 opportunities)
   Rename enrich_fpds.py → enrich_contracts.py in Phase 4.
