@@ -9,6 +9,10 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes, createHash } from 'crypto'
+import securityHeaders from './middleware/securityHeaders.js'
+import { apiRateLimit, registerRateLimit, reportRateLimit, getClientIp } from './middleware/rateLimit.js'
+import { validateContractsParams, validateOpportunitiesParams } from './middleware/validate.js'
+import { logHoneypot, logReportGeneration, logExcessReports } from './middleware/abuseLog.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -37,9 +41,22 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false }
 })
 
+const isProd = process.env.NODE_ENV === 'production'
+
 const app = express()
+app.disable('x-powered-by')
+app.use(securityHeaders)
 app.use(cors())
 app.use(express.json())
+
+// ─── Honeypot routes — never linked, only bots hit these ─
+const HONEYPOT_PATHS = ['/admin', '/wp-admin', '/phpmyadmin', '/.env', '/.git', '/config', '/backup', '/api/admin']
+HONEYPOT_PATHS.forEach(path => {
+  app.all(path, (req, res) => {
+    logHoneypot(getClientIp(req), req.path)
+    res.status(403).json({ error: 'Forbidden' })
+  })
+})
 
 // ─── Health ───────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -58,7 +75,7 @@ app.get('/api/stats', async (req, res) => {
     `)
     res.json(rows[0])
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -85,7 +102,7 @@ app.get('/api/contracts', async (req, res) => {
     `)
     res.json({ data: rows, meta: { total: rows.length } })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -99,7 +116,7 @@ app.get('/api/contracts/:piid', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -114,7 +131,7 @@ app.get('/api/opportunities', async (req, res) => {
     `)
     res.json({ data: rows, meta: { total: rows.length } })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -128,7 +145,7 @@ app.get('/api/opportunities/:notice_id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -145,7 +162,7 @@ app.get('/api/reports/contract/:piid', async (req, res) => {
     if (!rows.length || !rows[0].sections) return res.json({ found: false })
     res.json({ found: true, sections: rows[0].sections, generated_at: rows[0].generated_at })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -337,7 +354,7 @@ app.get('/api/reports/print/:piid', async (req, res) => {
     res.send(html)
   } catch (e) {
     console.error('Print error:', e)
-    res.status(500).send(`<p>Error: ${e.message}</p>`)
+    res.status(500).send(isProd ? '<p>Internal server error</p>' : `<p>Error: ${e.message}</p>`)
   }
 })
 
@@ -450,9 +467,19 @@ function parseReportXml(xml) {
   return result
 }
 
-app.post('/api/reports/generate', async (req, res) => {
+app.post('/api/reports/generate', reportRateLimit, requireApiKey, async (req, res) => {
   const { piid } = req.body
   if (!piid) return res.status(400).json({ error: 'piid required' })
+
+  // Per-key report limit
+  const keyHash = hashKey(req.headers['x-awardopedia-key'])
+  const keyPrefix = req.headers['x-awardopedia-key']?.slice(0, 16) || 'unknown'
+  const rkl = checkReportKeyLimit(keyHash)
+  logReportGeneration(keyPrefix, piid, getClientIp(req))
+  if (!rkl.allowed) {
+    logExcessReports(keyPrefix, rkl.count, getClientIp(req))
+    return res.status(429).json({ error: 'Report generation limit exceeded (10/day). Try again tomorrow.' })
+  }
 
   try {
     // Fetch contract from DB
@@ -521,7 +548,7 @@ app.post('/api/reports/generate', async (req, res) => {
     })
   } catch (e) {
     console.error('Report error:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -538,7 +565,7 @@ app.get('/api/reports/opportunity/:notice_id', async (req, res) => {
     if (!rows.length || !rows[0].sections) return res.json({ found: false })
     res.json({ found: true, sections: rows[0].sections, generated_at: rows[0].generated_at })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -640,9 +667,19 @@ STRICT RULES:
 6. Action items must be specific and time-bound, not generic advice.
 7. Temperature is 0 — be deterministic and consistent.`
 
-app.post('/api/reports/generate-opportunity', async (req, res) => {
+app.post('/api/reports/generate-opportunity', reportRateLimit, requireApiKey, async (req, res) => {
   const { notice_id } = req.body
   if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+
+  // Per-key report limit
+  const keyHash = hashKey(req.headers['x-awardopedia-key'])
+  const keyPrefix = req.headers['x-awardopedia-key']?.slice(0, 16) || 'unknown'
+  const rkl = checkReportKeyLimit(keyHash)
+  logReportGeneration(keyPrefix, notice_id, getClientIp(req))
+  if (!rkl.allowed) {
+    logExcessReports(keyPrefix, rkl.count, getClientIp(req))
+    return res.status(429).json({ error: 'Report generation limit exceeded (10/day). Try again tomorrow.' })
+  }
 
   try {
     const { rows } = await pool.query(
@@ -701,7 +738,7 @@ app.post('/api/reports/generate-opportunity', async (req, res) => {
     res.json({ cached: false, generated_at: new Date().toISOString(), usage: message.usage, sections })
   } catch (e) {
     console.error('Opportunity report error:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
@@ -710,6 +747,19 @@ app.post('/api/reports/generate-opportunity', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 
 const SENDGRID_API_KEY = envVars.SENDGRID_API_KEY || process.env.SENDGRID_API_KEY
+
+// ─── Per-key report generation limiter (10/day) ──────────────────
+const reportKeyBuckets = new Map() // key_hash -> { count, dayStart }
+function checkReportKeyLimit(keyHash) {
+  const now = Date.now()
+  let b = reportKeyBuckets.get(keyHash)
+  if (!b || now - b.dayStart > 86400000) {
+    b = { count: 0, dayStart: now }
+    reportKeyBuckets.set(keyHash, b)
+  }
+  b.count++
+  return { allowed: b.count <= 10, count: b.count }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function hashKey(plain) {
@@ -785,7 +835,7 @@ async function requireApiKey(req, res, next) {
 }
 
 // ─── GET /api/v1/contracts ───────────────────────────────────────
-app.get('/api/v1/contracts', requireApiKey, async (req, res) => {
+app.get('/api/v1/contracts', apiRateLimit, requireApiKey, validateContractsParams, async (req, res) => {
   try {
     const { agency, naics, state, set_aside, expiring_within_days, min_amount, max_amount, q, page: pg_, limit: lim_ } = req.query
     const page = Math.max(1, parseInt(pg_) || 1)
@@ -825,17 +875,19 @@ app.get('/api/v1/contracts', requireApiKey, async (req, res) => {
       [...params, limit, offset]
     )
 
+    const totalPages = Math.ceil(total / limit)
+    res.setHeader('X-Total-Pages', totalPages)
     res.json({
       data: dataRes.rows,
-      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit })
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit, total_pages: totalPages })
     })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
 // ─── GET /api/v1/contracts/:piid ─────────────────────────────────
-app.get('/api/v1/contracts/:piid', requireApiKey, async (req, res) => {
+app.get('/api/v1/contracts/:piid', apiRateLimit, requireApiKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT *, (end_date - CURRENT_DATE) AS days_to_expiry FROM contracts WHERE piid = $1`,
@@ -847,12 +899,12 @@ app.get('/api/v1/contracts/:piid', requireApiKey, async (req, res) => {
       meta: apiMeta({ last_updated: new Date().toISOString(), total_results: 1, page: 1, limit: 1 })
     })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
 // ─── GET /api/v1/opportunities ───────────────────────────────────
-app.get('/api/v1/opportunities', requireApiKey, async (req, res) => {
+app.get('/api/v1/opportunities', apiRateLimit, requireApiKey, validateOpportunitiesParams, async (req, res) => {
   try {
     const { agency, naics, state, set_aside, deadline_within_days, is_recompete, q, page: pg_, limit: lim_ } = req.query
     const page = Math.max(1, parseInt(pg_) || 1)
@@ -892,17 +944,19 @@ app.get('/api/v1/opportunities', requireApiKey, async (req, res) => {
       [...params, limit, offset]
     )
 
+    const totalPages = Math.ceil(total / limit)
+    res.setHeader('X-Total-Pages', totalPages)
     res.json({
       data: dataRes.rows,
-      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit })
+      meta: apiMeta({ last_updated: new Date().toISOString(), total_results: total, page, limit, total_pages: totalPages })
     })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
 // ─── GET /api/v1/opportunities/:notice_id ────────────────────────
-app.get('/api/v1/opportunities/:notice_id', requireApiKey, async (req, res) => {
+app.get('/api/v1/opportunities/:notice_id', apiRateLimit, requireApiKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT *, (response_deadline - CURRENT_DATE) AS days_to_deadline FROM opportunities WHERE notice_id = $1`,
@@ -914,12 +968,12 @@ app.get('/api/v1/opportunities/:notice_id', requireApiKey, async (req, res) => {
       meta: apiMeta({ last_updated: new Date().toISOString(), total_results: 1, page: 1, limit: 1 })
     })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
 // ─── GET /api/v1/stats ───────────────────────────────────────────
-app.get('/api/v1/stats', requireApiKey, async (req, res) => {
+app.get('/api/v1/stats', apiRateLimit, requireApiKey, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
@@ -933,12 +987,12 @@ app.get('/api/v1/stats', requireApiKey, async (req, res) => {
       meta: apiMeta({ last_updated: rows[0].last_updated })
     })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 
 // ─── POST /api/v1/register — API key registration ───────────────
-app.post('/api/v1/register', async (req, res) => {
+app.post('/api/v1/register', registerRateLimit, async (req, res) => {
   const { name, email, organization, use_case } = req.body
   if (!name || !email || !use_case) {
     return res.status(400).json({ error: 'name, email, and use_case are required' })
@@ -958,15 +1012,30 @@ app.post('/api/v1/register', async (req, res) => {
       return res.status(409).json({ error: 'An API key already exists for this email. Contact api@awardopedia.com to recover it.' })
     }
 
-    // Generate key: aw_ prefix + 32 random hex chars
-    const plainKey = 'aw_' + randomBytes(16).toString('hex')
+    // Generate key: aw_live_ prefix + 32 random hex chars
+    const plainKey = 'aw_live_' + randomBytes(16).toString('hex')
     const keyHash = hashKey(plainKey)
+    const keyPrefix = plainKey.slice(0, 16) // Store first 16 chars for support/display
 
-    await pool.query(
-      `INSERT INTO api_keys (key_hash, name, email, organization, use_case, created_at, last_used, request_count, revoked)
-       VALUES ($1, $2, $3, $4, $5, NOW(), NULL, 0, false)`,
-      [keyHash, name, email, organization || null, use_case]
-    )
+    // Try with key_prefix column first, fall back without it (column may not exist yet)
+    try {
+      await pool.query(
+        `INSERT INTO api_keys (key_hash, key_prefix, name, email, organization, use_case, created_at, last_used, request_count, revoked)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL, 0, false)`,
+        [keyHash, keyPrefix, name, email, organization || null, use_case]
+      )
+    } catch (insertErr) {
+      if (insertErr.message.includes('key_prefix')) {
+        // Column doesn't exist yet — insert without it
+        await pool.query(
+          `INSERT INTO api_keys (key_hash, name, email, organization, use_case, created_at, last_used, request_count, revoked)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NULL, 0, false)`,
+          [keyHash, name, email, organization || null, use_case]
+        )
+      } else {
+        throw insertErr
+      }
+    }
 
     // Send email with key (if SendGrid configured)
     if (SENDGRID_API_KEY) {
@@ -995,7 +1064,7 @@ app.post('/api/v1/register', async (req, res) => {
     res.json({ api_key: plainKey, message: 'Key generated successfully. Store it securely — it cannot be recovered.' })
   } catch (e) {
     console.error('Registration error:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })
 

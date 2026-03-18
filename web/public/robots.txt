@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Allow: /contracts
+Allow: /opportunities
+Allow: /api
+Allow: /terms
+Allow: /llms.txt
+Disallow: /api/v1/
+Disallow: /api/reports/
+
+Sitemap: https://awardopedia.com/sitemap.xml

@@ -1,8 +1,8 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
-Current phase: 6B — Security hardening (inserted between 6 and 7)
-NOTE: Phase 6B was added after Phase 6 completed. Ralph must do 6B before 7.
+Current phase: 7 — SEO static HTML page generation
+NOTE: Phase 6B (security hardening) complete. Phase 7 is next.
 
 ## Stack
 Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)
@@ -24,6 +24,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - Phase 4: ingest_contracts.py, enrich_fpds.py, sync_opportunities.py, summarize_batch.py + LaunchAgents ✅
 - Phase 5: check_links.py — 10-thread concurrent, 3h time-boxed, Sunday 3am LaunchAgent ✅
 - Phase 6: Public API v1, API key system, rate limiting, ApiKeys.jsx, Terms.jsx, llms.txt, TOS ✅
+- Phase 6B: Security hardening — per-IP rate limits, input validation, security headers, robots.txt, honeypots, abuse logging, report endpoint protection, safe error handling ✅
 
 ## Current DB state
 - contracts: 1 record (NISGAA CIOPS LLC / FA877324C0001) — waiting on 6pm SAM.gov batch for 100 more
@@ -58,6 +59,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - scripts/check_links.py — weekly dead link checker
 
 ## Known gotchas
+- ⚠️ api_keys needs key_prefix column: ALTER TABLE api_keys ADD COLUMN key_prefix VARCHAR(20);
 - ⚠️ api_keys + dead_links tables owned by doadmin. Run in DO console BEFORE Phase 6:
     ALTER TABLE api_keys OWNER TO awardopedia_user;
     ALTER TABLE dead_links OWNER TO awardopedia_user;
@@ -71,6 +73,21 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - Frontend has no react-router — uses state-based view switching. Add router in Phase 6 for /api page.
 - DB admin credentials in ~/awardopedia/.env (DO_TOKEN, doadmin password etc.)
 - Stripe payment link (one-time $6): https://buy.stripe.com/9B628ka2m6w90ViegT83C01 (Phase 8)
+
+## Phase 6B — COMPLETE
+All Phase 6B deliverables shipped:
+1. Per-IP rate limiting: 200/hr API, 3/day register, 5/hr reports (server/middleware/rateLimit.js)
+2. Input validation: allowlist params, sanitize search, NAICS/state/set-aside validation, page max 10 (server/middleware/validate.js)
+3. Security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, X-Powered-By removed (server/middleware/securityHeaders.js)
+4. robots.txt: Allow public pages, Disallow /api/v1/ and /api/reports/
+5. Honeypot routes: /admin, /wp-admin, /phpmyadmin, /.env, /.git, /config, /backup, /api/admin → 403 + logged
+6. Abuse logging: JSON lines to ~/awardopedia/logs/abuse.log (server/middleware/abuseLog.js)
+7. Report endpoint protection: require API key + 10 reports/day per key + 5/hr per IP
+8. Safe error handling: no stack traces in production (isProd check on all error responses)
+9. API key format updated to aw_live_ prefix, key_prefix stored for support (graceful fallback if column missing)
+10. X-Total-Pages header on paginated responses
+
+⚠️ DB migration needed (not done — STOP rule): ALTER TABLE api_keys ADD COLUMN key_prefix VARCHAR(20);
 
 ## Phase 6 — COMPLETE
 All Phase 6 deliverables shipped:

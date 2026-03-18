@@ -37,6 +37,27 @@ Started: 2025-03-17
 - Next: Phase 6 — Public API + API keys + llms.txt + TOS
 ---
 
+## 2026-03-18 — Phase 6B: Security hardening — rate limits, input validation, anti-scrape, headers
+- What was implemented:
+  - Per-IP rate limiting middleware (200/hr API, 3/day register, 5/hr reports) — server/middleware/rateLimit.js
+  - Input validation middleware (allowlist params, sanitize search, NAICS/state/set-aside validation, page max 10) — server/middleware/validate.js
+  - Security headers middleware (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, X-Powered-By removed) — server/middleware/securityHeaders.js
+  - Abuse logging to JSON lines file (~/awardopedia/logs/abuse.log) — server/middleware/abuseLog.js
+  - robots.txt (Allow public, Disallow /api/v1/ and /api/reports/) — web/public/robots.txt
+  - Honeypot routes (/admin, /wp-admin, /phpmyadmin, /.env, /.git, /config, /backup, /api/admin) → 403 + logged
+  - Report endpoint protection: require API key + 10 reports/day per key + 5/hr per IP
+  - Safe error handling: isProd guard on all error responses — no stack traces in production
+  - API key format updated from aw_ to aw_live_ prefix, key_prefix stored for support (graceful fallback)
+  - X-Total-Pages header on paginated v1 API responses
+  - Pagination depth limit: page > 10 returns 403 with bulk access message
+- Files changed: server/server.js, server/middleware/abuseLog.js (new), server/middleware/securityHeaders.js (new), server/middleware/rateLimit.js (new), server/middleware/validate.js (new), web/public/robots.txt (new)
+- Build result: PASS (frontend + server syntax check)
+- Learnings:
+  - api_keys table needs key_prefix column added (ALTER TABLE api_keys ADD COLUMN key_prefix VARCHAR(20)) — code has graceful fallback
+  - CORS still uses the cors() package alongside securityHeaders — securityHeaders adds stricter Access-Control-Allow-Origin for /api/ paths in production
+  - Report endpoints now gated behind requireApiKey — frontend report generation will need to pass API key header
+---
+
 ## 2026-03-18 — Phase 6: Public read API + API key system + llms.txt + TOS
 - What was implemented:
   - Server: /api/v1/* endpoints (contracts, opportunities, stats) with API key auth middleware, in-memory rate limiter (1k/day, 5k/week), POST /api/v1/register with SendGrid email

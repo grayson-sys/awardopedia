@@ -53,7 +53,7 @@
     "title": "Security hardening \u2014 rate limits, input validation, anti-scrape, headers",
     "description": "Harden the API and site against scraping, injection, abuse, and bulk data theft. Add per-IP rate limiting, input sanitization, security headers, robots.txt, honeypot routes, pagination depth limits, and abuse logging.",
     "acceptance_criteria": "All query params validated and sanitized. Per-IP limits enforced independent of API key. Security headers on all responses. robots.txt live. Honeypot routes log and 403. Report endpoint rate-limited separately. No stack traces in error responses. API key hashed in DB (not plaintext). Build passes clean.",
-    "status": "pending"
+    "status": "complete"
   },
   {
     "id": 7,
