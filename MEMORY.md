@@ -16,6 +16,18 @@ API server: cd ~/awardopedia/server && NODE_TLS_REJECT_UNAUTHORIZED=0 node serve
 Dev server: cd ~/awardopedia/web && npm run dev (port 5173, proxies /api → 3001)
 Build: cd ~/awardopedia/web && npx vite build --mode development
 
+## DO Spaces (Phase 7)
+- Bucket: awardopedia-static (nyc3) — PUBLIC READ enabled, live ✓
+- Endpoint: https://nyc3.digitaloceanspaces.com
+- Public URL base: https://awardopedia-static.nyc3.digitaloceanspaces.com
+- Credentials in .env: DO_SPACES_KEY, DO_SPACES_SECRET, DO_SPACES_REGION, DO_SPACES_BUCKET, DO_SPACES_ENDPOINT
+- boto3 not available system-wide (macOS managed Python). Use: python3 -m venv /tmp/s3venv && /tmp/s3venv/bin/pip install boto3
+- OR use urllib + AWS Signature V4 (no deps). See scripts/upload_spaces.py if Ralph creates it.
+- Static pages go to: /contracts/{piid}.html and /opportunities/{notice_id}.html
+- Sitemap goes to: /sitemap.xml
+- Cache-Control: public, max-age=86400 on all static files
+- Schedule: LaunchAgent daily 5am (NOT cron — cron is broken on this Mac mini)
+
 ## Completed phases
 - Phase 0: Audit, schema rebuild, React+Vite scaffold, design system ✅
 - Phase 1: NISGAA CIOPS LLC (FA877324C0001) — real contract, 58 fields, Claude report ✅
