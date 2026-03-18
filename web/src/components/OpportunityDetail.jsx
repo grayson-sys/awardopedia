@@ -1,4 +1,56 @@
+import { useState, useEffect } from 'react'
 import { ArrowLeft } from 'lucide-react'
+
+const OPP_SECTION_LABELS = {
+  executive_summary:       'Executive Summary',
+  bid_recommendation:      'Bid / No-Bid Recommendation',
+  competitive_landscape:   'Competitive Landscape',
+  recompete_intelligence:  'Recompete Intelligence',
+  teaming_strategy:        'Teaming Strategy',
+  risk_factors:            'Risk Factors',
+  action_items:            'Action Items',
+}
+
+function ReportView({ sections, generatedAt }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span className="badge badge-success">Report Ready</span>
+        {generatedAt && (
+          <span className="text-sm text-muted">
+            Generated {new Date(generatedAt).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-muted)', fontStyle: 'italic', marginBottom: 14, lineHeight: 1.5 }}>
+        Verified data from SAM.gov. Bid analysis and recommendations are AI-generated assessments — not verified competitive intelligence.
+      </div>
+
+      {sections.bid_recommendation && (
+        <div className="card" style={{ borderLeft: '3px solid var(--color-navy)', marginBottom: 12 }}>
+          <div className="section-title">Bid / No-Bid Recommendation</div>
+          <p style={{ fontSize: 13, lineHeight: 1.6 }}>{sections.bid_recommendation}</p>
+        </div>
+      )}
+
+      {Object.entries(OPP_SECTION_LABELS)
+        .filter(([key]) => key !== 'bid_recommendation' && key !== 'attribution' && sections[key])
+        .map(([key, label]) => (
+          <div key={key} className="card" style={{ marginBottom: 12 }}>
+            <div className="section-title">{label}</div>
+            <p style={{ fontSize: 13, lineHeight: 1.6 }}>{sections[key]}</p>
+          </div>
+        ))
+      }
+
+      {sections.attribution && (
+        <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 8, fontStyle: 'italic' }}>
+          {sections.attribution}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function fmt(n) {
   if (!n) return '—'
@@ -20,6 +72,37 @@ function DeadlineLabel({ days }) {
 
 export default function OpportunityDetail({ opp, onBack }) {
   const days = daysUntil(opp.response_deadline)
+  const [report, setReport]           = useState(null)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState(null)
+
+  // Auto-load cached report on mount
+  useEffect(() => {
+    if (!opp.notice_id) return
+    fetch(`/api/reports/opportunity/${opp.notice_id}`)
+      .then(r => r.json())
+      .then(data => { if (data.found) setReport({ sections: data.sections, generated_at: data.generated_at }) })
+      .catch(() => {})
+  }, [opp.notice_id])
+
+  async function generateReport() {
+    setReportLoading(true)
+    setReportError(null)
+    try {
+      const res = await fetch('/api/reports/generate-opportunity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notice_id: opp.notice_id })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
+      setReport(data)
+    } catch (e) {
+      setReportError(e.message)
+    } finally {
+      setReportLoading(false)
+    }
+  }
 
   return (
     <div>
@@ -211,6 +294,9 @@ export default function OpportunityDetail({ opp, onBack }) {
                 </div>
               )}
             </div>
+
+            {/* Opportunity Report — expands in main column when generated */}
+            {report?.sections && <ReportView sections={report.sections} generatedAt={report.generated_at} />}
           </div>
 
           {/* Sidebar */}
@@ -229,9 +315,23 @@ export default function OpportunityDetail({ opp, onBack }) {
               <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12 }}>
                 Powered by Claude · PDF + CSV · 1 credit ($0.33)
               </div>
-              <button className="btn btn-amber" style={{ width: '100%', justifyContent: 'center' }}>
-                Generate Report — 1 Credit
-              </button>
+              {reportError && (
+                <div style={{ fontSize: 12, color: 'var(--color-danger)', marginBottom: 10 }}>{reportError}</div>
+              )}
+              {report?.sections ? (
+                <div style={{ fontSize: 12, color: 'var(--color-success)', textAlign: 'center', padding: '8px 0' }}>
+                  ✓ Report loaded above
+                </div>
+              ) : (
+                <button
+                  className="btn btn-amber"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={generateReport}
+                  disabled={reportLoading}
+                >
+                  {reportLoading ? 'Generating…' : 'Generate Report — 1 Credit'}
+                </button>
+              )}
             </div>
           </div>
         </div>
