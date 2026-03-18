@@ -175,7 +175,7 @@ app.get('/api/reports/print/:piid', async (req, res) => {
     const { fileURLToPath: fu } = await import('url')
     let logoB64 = ''
     try {
-      const logoPath = pathResolve(pathDirname(fu(import.meta.url)), '../assets/logo-horizontal-white.png')
+      const logoPath = pathResolve(pathDirname(fu(import.meta.url)), '../assets/logo-horizontal-clean.jpg')
       logoB64 = readFileSync(logoPath).toString('base64')
     } catch (e) { /* logo missing — skip */ }
 
@@ -288,7 +288,7 @@ app.get('/api/reports/print/:piid', async (req, res) => {
   <div class="header">
     <div class="logo">
       ${logoB64
-        ? `<img src="data:image/png;base64,${logoB64}" alt="Awardopedia">`
+        ? `<img src="data:image/jpeg;base64,${logoB64}" alt="Awardopedia">`
         : `<div class="logo-text">Award<span>opedia</span></div>`}
     </div>
     <div class="header-meta">

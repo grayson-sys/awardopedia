@@ -33,8 +33,9 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   font-size: 18px;
   color: var(--color-white);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.8px;
 }
+.nav-logo span { letter-spacing: -0.8px; }
 .nav-logo span { color: var(--color-amber); }
 .nav-links { display: flex; gap: 24px; }
 .nav-links a,
