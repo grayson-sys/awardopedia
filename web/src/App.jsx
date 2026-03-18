@@ -68,7 +68,13 @@ export default function App() {
 
   return (
     <div>
-      <Nav activePage={activeTab} />
+      <Nav
+        activePage={activeTab}
+        onHome={() => setView('contracts')}
+        onNavigate={(page) => {
+          if (page === 'contracts' || page === 'opportunities') setView(page)
+        }}
+      />
 
       {/* Page header */}
       <div className="page-header">

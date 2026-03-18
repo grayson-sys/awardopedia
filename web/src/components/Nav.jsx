@@ -1,12 +1,30 @@
-export default function Nav({ activePage }) {
+import { BookOpen } from 'lucide-react'
+
+export default function Nav({ activePage, onHome, onNavigate }) {
   return (
     <nav className="nav">
-      <div className="nav-logo">Award<span>opedia</span></div>
+      <button
+        className="nav-logo"
+        onClick={onHome}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: 0 }}
+      >
+        <BookOpen size={20} strokeWidth={2} color="#D4940A" />
+        Award<span>opedia</span>
+      </button>
       <div className="nav-links">
-        <a href="#contracts" className={activePage === 'contracts' ? 'active' : ''}>Contracts</a>
-        <a href="#opportunities" className={activePage === 'opportunities' ? 'active' : ''}>Opportunities</a>
-        <a href="#expiring" className={activePage === 'expiring' ? 'active' : ''}>Expiring</a>
-        <a href="#api">API</a>
+        <button
+          className={activePage === 'contracts' ? 'active' : ''}
+          onClick={() => onNavigate?.('contracts')}
+        >Contracts</button>
+        <button
+          className={activePage === 'opportunities' ? 'active' : ''}
+          onClick={() => onNavigate?.('opportunities')}
+        >Opportunities</button>
+        <button
+          className={activePage === 'expiring' ? 'active' : ''}
+          onClick={() => onNavigate?.('expiring')}
+        >Expiring</button>
+        <button onClick={() => onNavigate?.('api')}>API</button>
       </div>
     </nav>
   )

@@ -37,14 +37,22 @@ a:hover { text-decoration: underline; }
 }
 .nav-logo span { color: var(--color-amber); }
 .nav-links { display: flex; gap: 24px; }
-.nav-links a {
+.nav-links a,
+.nav-links button {
   color: rgba(255,255,255,0.75);
   font-size: 13px;
   font-weight: 500;
   transition: color 0.15s;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
 }
-.nav-links a:hover { color: var(--color-white); text-decoration: none; }
-.nav-links a.active { color: var(--color-white); }
+.nav-links a:hover,
+.nav-links button:hover { color: var(--color-white); text-decoration: none; }
+.nav-links a.active,
+.nav-links button.active { color: var(--color-white); }
 
 /* Page header */
 .page-header {
