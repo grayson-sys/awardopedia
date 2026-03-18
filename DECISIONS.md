@@ -36,3 +36,13 @@ Choice: All award/agency/NAICS data free; AI analysis costs credits
 Alternatives considered: Subscription tiers, per-search pricing
 Reason: Specified in product brief; maximizes indexable content for SEO
 Affects: Step 5 credit system, Step 3 middleware/auth, Stripe integration
+
+## 2026-03-18 — Vercel ABANDONED. DO only.
+Choice: DigitalOcean App Platform for ALL hosting. No Vercel, ever.
+Reason: Explicit direction from Grayson. Do not second-guess this.
+Current state: awardopedia.com DNS still points at a legacy Vercel deployment.
+  That deployment is orphaned — do not touch it, do not redeploy it.
+  Next step: deploy React+Vite (web/) to DO App Platform static site,
+  then update Cloudflare DNS to point to DO instead of Vercel.
+Affects: All deployment steps, MASTER_PROMPT phases, every agent/session.
+Hard rule: If you see a Vercel suggestion anywhere, remove it and flag it.

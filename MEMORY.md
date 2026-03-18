@@ -1,6 +1,21 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
+## ⛔ ABSOLUTE RULE — READ THIS FIRST
+**VERCEL IS ABANDONED. DO NOT USE VERCEL. DO NOT DEPLOY TO VERCEL.**
+**EVERYTHING runs on DigitalOcean (DO App Platform) or the Mac Mini. No exceptions.**
+- Frontend: React + Vite → DO App Platform (static site)
+- API: Node.js/Express (server/server.js) → DO App Platform (service)
+- DB: PostgreSQL 15 → DO Managed Database
+- Scripts: Python 3 → Mac Mini LaunchAgents
+- Static pages: DO Spaces (awardopedia-static, nyc3)
+- DNS/CDN: Cloudflare → DO App Platform
+
+NOTE: awardopedia.com is currently STILL pointed at a legacy Vercel deployment.
+That Vercel deployment must be replaced by the DO App Platform frontend.
+Cloudflare DNS will be updated to point to DO once the React+Vite app is deployed there.
+DO NOT touch or redeploy the Vercel project. Let it rot.
+
 Current phase: 8 — Report generation + Stripe + PDF/CSV + caching
 NOTE: Phase 7 (SEO static pages) complete. Phase 8 is next.
 
