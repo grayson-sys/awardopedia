@@ -207,11 +207,36 @@ def upsert(fields: dict):
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
+def run_ollama_summary(piid: str):
+    """Trigger llama_summary generation for a single PIID. Non-fatal if Ollama is down."""
+    import subprocess
+    script = Path(__file__).parent / 'generate_llama_summaries.py'
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), '--piid', piid, '--force'],
+            capture_output=True, text=True, timeout=90
+        )
+        if result.returncode == 0:
+            # Extract the summary line from stdout
+            for line in result.stdout.splitlines():
+                if '✓' in line:
+                    print(f"  Ollama: {line.strip()}")
+                    return
+            print("  Ollama: summary generated")
+        else:
+            print(f"  Ollama: failed (non-fatal) — {result.stderr[:80]}")
+    except subprocess.TimeoutExpired:
+        print("  Ollama: timeout (non-fatal) — run generate_llama_summaries.py manually")
+    except Exception as e:
+        print(f"  Ollama: error (non-fatal) — {e}")
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--piid', help='PIID to fetch and enrich')
     parser.add_argument('--from-file', help='Load from local JSON file instead of API')
+    parser.add_argument('--no-summary', action='store_true', help='Skip Ollama summary generation')
     args = parser.parse_args()
 
     if args.from_file:
@@ -220,7 +245,6 @@ if __name__ == '__main__':
             raw = json.load(f)
     elif args.piid:
         raw = fetch_award(args.piid)
-        # Save for inspection
         out = Path(__file__).parent.parent / 'sample_contract.json'
         out.write_text(json.dumps(raw, indent=2, default=str))
         print(f"  Saved raw response → {out}")
@@ -237,5 +261,11 @@ if __name__ == '__main__':
             print(f"  {k}: {str(v)[:80]}")
 
     print("\nWriting to DB...")
+    piid = fields.get('piid') or raw.get('piid')
     upsert(fields)
+
+    if not args.no_summary:
+        print("\nGenerating Ollama summary...")
+        run_ollama_summary(piid)
+
     print("\nDone. Record is fully enriched.")
