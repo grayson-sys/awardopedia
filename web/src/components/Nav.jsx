@@ -1,12 +1,14 @@
+import { BookOpen } from 'lucide-react'
+
 export default function Nav({ activePage, onHome, onNavigate }) {
   return (
     <nav className="nav">
       <button
         className="nav-logo"
         onClick={onHome}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: 0 }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: 0 }}
       >
-        <img src="/logo-icon.jpg" alt="Awardopedia" style={{ height: 34, width: 'auto', display: 'block' }} />
+        <BookOpen size={22} strokeWidth={2} color="#E9A820" />
         Award<span>opedia</span>
       </button>
       <div className="nav-links">
