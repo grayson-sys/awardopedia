@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, FileText, Loader } from 'lucide-react'
 
 function fmt(n) {
@@ -78,6 +78,15 @@ export default function ContractDetail({ contract, onBack }) {
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState(null)
 
+  // Auto-load cached report on mount
+  useEffect(() => {
+    if (!contract.piid) return
+    fetch(`/api/reports/contract/${contract.piid}`)
+      .then(r => r.json())
+      .then(data => { if (data.found) setReport({ sections: data.sections, generated_at: data.generated_at }) })
+      .catch(() => {})
+  }, [contract.piid])
+
   async function generateReport() {
     setReportLoading(true)
     setReportError(null)
@@ -95,6 +104,10 @@ export default function ContractDetail({ contract, onBack }) {
     } finally {
       setReportLoading(false)
     }
+  }
+
+  function openPrint() {
+    window.open(`/api/reports/print/${contract.piid}`, '_blank')
   }
 
   return (
@@ -349,11 +362,18 @@ export default function ContractDetail({ contract, onBack }) {
               {report && (
                 <div>
                   <span className="badge badge-success" style={{ marginBottom: 8, display: 'inline-block' }}>
-                    {report.cached ? 'Cached Report' : 'Report Generated'}
+                    Report Ready
                   </span>
-                  <div className="text-sm text-muted">
+                  <div className="text-sm text-muted mt-4" style={{ marginBottom: 12 }}>
                     Generated {new Date(report.generated_at).toLocaleDateString()}
                   </div>
+                  <button
+                    className="btn btn-navy"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={openPrint}
+                  >
+                    <FileText size={14} /> Print / Save PDF
+                  </button>
                 </div>
               )}
             </div>

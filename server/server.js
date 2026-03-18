@@ -131,6 +131,205 @@ app.get('/api/opportunities/:notice_id', async (req, res) => {
   }
 })
 
+// ─── Report: load cached ──────────────────────────────────
+app.get('/api/reports/contract/:piid', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sections, generated_at, purchase_count FROM reports
+       WHERE record_type = 'contract' AND record_id = $1
+       AND generated_at > NOW() - INTERVAL '90 days'
+       ORDER BY generated_at DESC LIMIT 1`,
+      [req.params.piid]
+    )
+    if (!rows.length || !rows[0].sections) return res.json({ found: false })
+    res.json({ found: true, sections: rows[0].sections, generated_at: rows[0].generated_at })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Report: print view ───────────────────────────────────
+app.get('/api/reports/print/:piid', async (req, res) => {
+  try {
+    const { rows: rpt } = await pool.query(
+      `SELECT r.sections, r.generated_at, c.recipient_name, c.agency_name, c.sub_agency_name,
+              c.piid, c.award_amount, c.naics_code, c.naics_description,
+              c.start_date, c.end_date, c.set_aside_type, c.contract_type, c.description
+       FROM reports r
+       JOIN contracts c ON c.piid = r.record_id
+       WHERE r.record_type = 'contract' AND r.record_id = $1
+       AND r.generated_at > NOW() - INTERVAL '90 days'
+       ORDER BY r.generated_at DESC LIMIT 1`,
+      [req.params.piid]
+    )
+    if (!rpt.length || !rpt[0].sections) {
+      return res.status(404).send('<p>Report not found. Please generate it first.</p>')
+    }
+    const c = rpt[0]
+    const s = c.sections
+    const genDate = new Date(c.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    // Load logo as base64
+    const { readFileSync } = await import('fs')
+    const { resolve: pathResolve, dirname: pathDirname } = await import('path')
+    const { fileURLToPath: fu } = await import('url')
+    let logoB64 = ''
+    try {
+      const logoPath = pathResolve(pathDirname(fu(import.meta.url)), '../assets/logo-horizontal.jpg')
+      logoB64 = readFileSync(logoPath).toString('base64')
+    } catch (e) { /* logo missing — skip */ }
+
+    const fmt = n => n ? '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'
+
+    const sectionHtml = (title, body, accent) => body ? `
+      <div class="section${accent ? ' accent' : ''}">
+        <div class="section-label">${title}</div>
+        <div class="section-body">${body.replace(/\n/g, '<br>')}</div>
+      </div>` : ''
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Awardopedia Report — ${c.piid}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', serif;
+    font-size: 11pt;
+    color: #1A1A2E;
+    background: #fff;
+    padding: 0;
+  }
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 48px 64px;
+  }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 2px solid #1B3A6B; }
+  .logo img { height: 36px; }
+  .logo-text { font-family: sans-serif; font-size: 22px; font-weight: 700; color: #1B3A6B; letter-spacing: -0.5px; }
+  .logo-text span { color: #D4940A; }
+  .header-meta { text-align: right; font-family: sans-serif; font-size: 9pt; color: #6B7280; line-height: 1.5; }
+  .header-meta strong { display: block; font-size: 10pt; color: #1A1A2E; }
+
+  /* Summary bar */
+  .summary-bar { background: #EEF2F9; border-left: 4px solid #1B3A6B; padding: 12px 16px; margin-bottom: 24px; border-radius: 0 4px 4px 0; }
+  .summary-bar h1 { font-family: sans-serif; font-size: 13pt; font-weight: 700; color: #1B3A6B; margin-bottom: 4px; }
+  .summary-bar .meta { font-family: sans-serif; font-size: 9pt; color: #6B7280; display: flex; flex-wrap: wrap; gap: 16px; margin-top: 6px; }
+  .summary-bar .meta span { white-space: nowrap; }
+  .amount { font-family: 'Courier New', monospace; font-weight: 700; font-size: 14pt; color: #1B3A6B; }
+
+  /* Sections */
+  .section { margin-bottom: 20px; }
+  .section.accent { background: #EEF2F9; border-left: 4px solid #1B3A6B; padding: 12px 16px; border-radius: 0 4px 4px 0; }
+  .section-label { font-family: sans-serif; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #6B7280; margin-bottom: 6px; }
+  .section.accent .section-label { color: #1B3A6B; }
+  .section-body { line-height: 1.65; color: #1A1A2E; }
+
+  /* Disclaimer */
+  .disclaimer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #E2E4E9; font-family: sans-serif; font-size: 8pt; color: #9CA3AF; line-height: 1.5; }
+  .disclaimer strong { color: #6B7280; }
+
+  /* Print */
+  @media print {
+    body { padding: 0; }
+    .page { padding: 0.6in 0.75in 0.75in; max-width: 100%; }
+    .no-print { display: none !important; }
+    .section { page-break-inside: avoid; }
+  }
+
+  /* Screen only — print button */
+  .print-bar {
+    background: #1B3A6B;
+    color: white;
+    padding: 10px 48px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: sans-serif;
+    font-size: 12px;
+  }
+  .print-bar button {
+    background: #D4940A;
+    color: white;
+    border: none;
+    padding: 7px 18px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .print-bar button:hover { opacity: 0.85; }
+  @media print { .print-bar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <span>Awardopedia Report — ${c.piid}</span>
+  <button onclick="window.print()">⬇ Print / Save PDF</button>
+</div>
+
+<div class="page">
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      ${logoB64
+        ? `<img src="data:image/jpeg;base64,${logoB64}" alt="Awardopedia">`
+        : `<div class="logo-text">Award<span>opedia</span></div>`}
+    </div>
+    <div class="header-meta">
+      <strong>Contract Intelligence Report</strong>
+      Generated ${genDate}<br>
+      PIID: ${c.piid}<br>
+      Source: USASpending.gov via Awardopedia.com
+    </div>
+  </div>
+
+  <!-- Summary bar -->
+  <div class="summary-bar">
+    <h1>${c.recipient_name || '—'} × ${c.agency_name || '—'}</h1>
+    <div class="meta">
+      <span class="amount">${fmt(c.award_amount)}</span>
+      <span>${c.contract_type || '—'}</span>
+      <span>${c.set_aside_type || 'No set-aside'}</span>
+      <span>NAICS ${c.naics_code || '—'} — ${c.naics_description || ''}</span>
+      <span>${c.start_date ? new Date(c.start_date).toLocaleDateString('en-US', {month:'short',year:'numeric'}) : '—'} → ${c.end_date ? new Date(c.end_date).toLocaleDateString('en-US', {month:'short',year:'numeric'}) : '—'}</span>
+    </div>
+    ${c.description ? `<div style="margin-top:8px;font-size:9pt;color:#374151;font-style:italic;">${c.description}</div>` : ''}
+  </div>
+
+  ${sectionHtml('Recommended Action', s.recommended_action, true)}
+  ${sectionHtml('Executive Summary', s.executive_summary)}
+  ${sectionHtml('Award Details', s.award_details)}
+  ${sectionHtml('Competitive Landscape', s.competitive_landscape)}
+  ${sectionHtml('Incumbent Analysis', s.incumbent_analysis)}
+  ${sectionHtml('Recompete Assessment', s.recompete_assessment)}
+
+  <div class="disclaimer">
+    <strong>Data &amp; Methodology:</strong> Factual data sourced from USASpending.gov, the official US federal spending database.
+    Market analysis, competitive assessments, and recommendations are AI-generated based on the contract data provided
+    and general federal contracting knowledge. These represent informed analysis, not verified competitive intelligence.
+    Always verify current solicitation status on SAM.gov.
+    <br><br>
+    ${s.attribution || 'Analysis powered by Claude · Awardopedia.com · For informational purposes only, not legal or procurement advice.'}
+  </div>
+</div>
+
+</body>
+</html>`
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.send(html)
+  } catch (e) {
+    console.error('Print error:', e)
+    res.status(500).send(`<p>Error: ${e.message}</p>`)
+  }
+})
+
 // ─── Report generation ────────────────────────────────────
 // Deterministic XML containers — Claude fills fixed slots, UI always renders same structure
 const REPORT_SYSTEM_PROMPT = `You are a senior federal contracting analyst writing a concise, actionable report for a small business owner.
