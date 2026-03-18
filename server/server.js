@@ -480,7 +480,7 @@ app.post('/api/reports/generate', async (req, res) => {
     const prompt = buildContractPrompt(contract)
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 1500,
+      max_tokens: 2500,
       temperature: 0,   // deterministic
       system: REPORT_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }]
