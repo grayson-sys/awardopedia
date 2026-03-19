@@ -59,7 +59,7 @@ HONEYPOT_PATHS.forEach(path => {
 })
 
 // ─── Health ───────────────────────────────────────────────
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
