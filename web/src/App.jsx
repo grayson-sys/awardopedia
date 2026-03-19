@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Nav from './components/Nav'
 import ContractDetail from './components/ContractDetail'
 import OpportunityDetail from './components/OpportunityDetail'
+import InfoIcon from './components/InfoIcon'
 import Terms from './pages/Terms'
 import ApiKeys from './pages/ApiKeys'
 import './index.css'
@@ -17,16 +18,19 @@ function daysLeft(dateStr) {
   return Math.ceil((new Date(dateStr) - new Date()) / 86400000)
 }
 
-function ExpiryCell({ dateStr, warnDays = 90, dangerDays = 30 }) {
-  if (!dateStr) return <span>—</span>
+function dateColor(dateStr) {
   const days = daysLeft(dateStr)
+  if (days == null) return undefined
+  if (days < 0) return '#dc3545'         // past → red
+  if (days < 183) return '#E9A820'       // < ~6 months → amber
+  return '#28a745'                        // 6+ months → green
+}
+
+function ExpiryCell({ dateStr }) {
+  if (!dateStr) return <span>—</span>
   const date = new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-  const label = days != null ? `${date} (${days}d)` : date
-  if (days == null) return <span>{date}</span>
-  if (days < 0) return <span className="expiry-danger">{date} (expired)</span>
-  if (days <= dangerDays) return <span className="expiry-danger">{label}</span>
-  if (days <= warnDays) return <span className="expiry-warn">{label}</span>
-  return <span>{label}</span>
+  const color = dateColor(dateStr)
+  return <span style={color ? { color } : undefined}>{date}</span>
 }
 
 // ── App ────────────────────────────────────────────────────────────────────
@@ -124,13 +128,12 @@ export default function App() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Agency</th>
-                    <th>Recipient</th>
-                    <th>NAICS</th>
-                    <th>Set-Aside</th>
-                    <th>State</th>
-                    <th>End Date</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
+                    <th>Agency <InfoIcon field="Agency" /></th>
+                    <th>NAICS <InfoIcon field="NAICS" /></th>
+                    <th>State <InfoIcon field="State" /></th>
+                    <th>Start Date <InfoIcon field="StartDate" /></th>
+                    <th>End Date <InfoIcon field="EndDate" /></th>
+                    <th style={{ textAlign: 'right' }}>Amount <InfoIcon field="Amount" /></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,18 +143,9 @@ export default function App() {
                         <div>{c.agency_name || '—'}</div>
                         {c.sub_agency_name && <div className="text-muted text-sm">{c.sub_agency_name}</div>}
                       </td>
-                      <td>
-                        <div style={{ fontWeight: 500 }}>{c.recipient_name || '—'}</div>
-                        <div className="piid">{c.piid}</div>
-                        {c.llama_summary && (
-                          <div className="text-muted text-sm" style={{ marginTop: 2, maxWidth: 320, lineHeight: 1.35 }}>
-                            {c.llama_summary.split('.')[0]}.
-                          </div>
-                        )}
-                      </td>
-                      <td>{c.naics_code ? <span className="badge badge-muted">{c.naics_code}</span> : '—'}</td>
-                      <td>{c.set_aside_type ? <span className="badge badge-navy" style={{ fontSize: 10 }}>{c.set_aside_type}</span> : '—'}</td>
+                      <td>{c.naics_code ? `${c.naics_code} — ${c.naics_description || ''}`.trim() : '—'}</td>
                       <td>{c.recipient_state || '—'}</td>
+                      <td><ExpiryCell dateStr={c.start_date} /></td>
                       <td><ExpiryCell dateStr={c.end_date} /></td>
                       <td><div className="amount">{fmt(c.award_amount)}</div></td>
                     </tr>
@@ -177,31 +171,26 @@ export default function App() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Agency</th>
-                    <th>Title</th>
-                    <th>NAICS</th>
-                    <th>Set-Aside</th>
-                    <th>Est. Value</th>
-                    <th>Deadline</th>
-                    <th>Type</th>
+                    <th>Agency <InfoIcon field="Agency" /></th>
+                    <th>NAICS <InfoIcon field="NAICS" /></th>
+                    <th>State <InfoIcon field="State" /></th>
+                    <th>Posted <InfoIcon field="PostedDate" /></th>
+                    <th>Deadline <InfoIcon field="ResponseDeadline" /></th>
+                    <th style={{ textAlign: 'right' }}>Est. Value <InfoIcon field="EstValue" /></th>
                   </tr>
                 </thead>
                 <tbody>
                   {opportunities.map(o => (
                     <tr key={o.notice_id} onClick={() => { setSelectedOpp(o); setView('opp-detail') }}>
-                      <td>{o.agency_name || '—'}</td>
                       <td>
-                        <div style={{ fontWeight: 500 }}>{o.title}</div>
-                        <div className="piid">{o.notice_id}</div>
+                        <div>{o.agency_name || '—'}</div>
+                        {o.sub_agency_name && <div className="text-muted text-sm">{o.sub_agency_name}</div>}
                       </td>
-                      <td>{o.naics_code ? <span className="badge badge-muted">{o.naics_code}</span> : '—'}</td>
-                      <td>{o.set_aside_type ? <span className="badge badge-navy" style={{ fontSize: 10 }}>{o.set_aside_type}</span> : '—'}</td>
-                      <td className="mono" style={{ fontSize: 12 }}>{fmt(o.estimated_value_max)}</td>
-                      <td><ExpiryCell dateStr={o.response_deadline} warnDays={14} dangerDays={5} /></td>
-                      <td>{o.is_recompete
-                        ? <span className="badge badge-amber">RECOMPETE</span>
-                        : <span className="badge badge-muted">New</span>}
-                      </td>
+                      <td>{o.naics_code ? `${o.naics_code} — ${o.naics_description || ''}`.trim() : '—'}</td>
+                      <td>{o.place_of_performance_state || '—'}</td>
+                      <td><ExpiryCell dateStr={o.posted_date} /></td>
+                      <td><ExpiryCell dateStr={o.response_deadline} /></td>
+                      <td><div className="amount">{fmt(o.estimated_value_max)}</div></td>
                     </tr>
                   ))}
                 </tbody>

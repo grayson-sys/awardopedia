@@ -1,0 +1,25 @@
+const tooltips = {
+  PSC: "Product Service Code — a 4-character code the government uses to categorize what they're buying (e.g., R425 = Engineering Support Services)",
+  NAICS: "North American Industry Classification System — a 6-digit code that identifies the industry of the contractor (e.g., 541330 = Engineering Services)",
+  PIID: "Procurement Instrument Identifier — the unique contract number assigned by the contracting office",
+  UEI: "Unique Entity Identifier — a 12-character ID assigned to every entity doing business with the federal government (replaced DUNS in 2022)",
+  Agency: "The federal department or agency that awarded or posted this contract",
+  SubAgency: "The specific bureau, command, or sub-organization within the parent agency",
+  State: "The state where the work is primarily performed",
+  StartDate: "The date the contract period of performance begins",
+  EndDate: "The date the contract period of performance ends",
+  ResponseDeadline: "The last date vendors can submit proposals or bids for this opportunity",
+  PostedDate: "The date this opportunity was first posted on SAM.gov",
+  Amount: "The total obligated dollar value of the contract",
+  EstValue: "The government's estimated value range for this opportunity",
+  SetAside: "Indicates if competition is restricted to certain business types (e.g., small business, 8(a), HUBZone, SDVOSB)",
+  CO: "Contracting Officer — the government official authorized to enter into and manage the contract",
+  Recipient: "The company or organization that was awarded the contract",
+  ContractType: "How the contractor gets paid (e.g., Firm-Fixed-Price = set price, Cost-Plus = costs + fee)",
+  CompetitionType: "How the contract was competed (e.g., Full and Open, Sole Source, Limited Competition)",
+  SolicitationNumber: "The reference number for the solicitation/RFP that this opportunity or contract originated from",
+  NoticeType: "The type of SAM.gov posting (e.g., Solicitation, Pre-solicitation, Award Notice)",
+  ArchiveDate: "The date this opportunity listing will be archived on SAM.gov",
+}
+
+export default tooltips
