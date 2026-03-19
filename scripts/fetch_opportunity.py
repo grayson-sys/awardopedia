@@ -209,7 +209,7 @@ def upsert_opportunity(fields: dict):
 
     cols = [k for k, v in fields.items() if v is not None]
     vals = [fields[c] for c in cols]
-    placeholders = ', '.join(f'${i+1}' for i in range(len(cols)))
+    placeholders = ', '.join('%s' for _ in cols)  # psycopg2 uses %s, not $1/$2
     updates = ', '.join(f'{c} = EXCLUDED.{c}' for c in cols if c != 'notice_id')
 
     sql = f"""
