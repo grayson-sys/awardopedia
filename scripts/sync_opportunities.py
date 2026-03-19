@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """
-sync_opportunities.py — Phase 4 Script 3: Daily SAM.gov opportunity sync
+sync_opportunities.py — Daily SAM.gov opportunity sync
 
-Fetches solicitations posted in the last 7 days, upserts into opportunities table.
-For recompetes: attempts to link to existing contract by solicitation number.
+Fetches active solicitations sorted by soonest responseDeadLine (T+100).
+No date-range filter — gets the 100 opportunities closest to deadline.
+Upserts into opportunities table. Detects recompetes by solicitation number.
 Generates Ollama summaries for new records.
 
 ENDPOINT: https://api.sam.gov/opportunities/v2/search
-RATE LIMIT: same daily quota as Contract Awards API (10/day no role, 1000/day with role)
-ONE API call per run (limit=100). Do not add more calls.
+RATE LIMIT: 10/day (no role), 1,000/day (with role). ONE call per run.
 
 USAGE:
-  python3 scripts/sync_opportunities.py              # last 7 days
-  python3 scripts/sync_opportunities.py --days 30    # last 30 days
+  python3 scripts/sync_opportunities.py              # 100 soonest-deadline opps
   python3 scripts/sync_opportunities.py --limit 10   # test: 10 records
-  python3 scripts/sync_opportunities.py --dry-run    # show query, don't write DB
-
-CRON (Mac Mini, daily 2am):
-  0 2 * * * cd ~/awardopedia && python3 scripts/sync_opportunities.py >> logs/sync.log 2>&1
+  python3 scripts/sync_opportunities.py --dry-run    # show query, don't call API
 """
 
 import os, sys, json, time, urllib.request, urllib.error, urllib.parse
@@ -69,28 +65,31 @@ def already_exists(notice_id: str) -> bool:
 
 # ── SAM.gov fetch (ONE call) ──────────────────────────────────────────────────
 
-def fetch_opportunities(days_back: int = 7, limit: int = 100) -> list:
+def fetch_opportunities(limit: int = 100) -> list:
     if not SAM_API_KEY:
         print("✗ SAM_API_KEY not set in .env")
         sys.exit(1)
 
-    posted_from = (datetime.today() - timedelta(days=days_back)).strftime("%m/%d/%Y")
+    # postedFrom/postedTo are MANDATORY on this API.
+    # Use a wide 2-year window so we don't choke the results.
+    # sortBy=responseDeadLine (ascending) gives us soonest-closing first (T+100).
+    posted_from = (datetime.today() - timedelta(days=730)).strftime("%m/%d/%Y")
     posted_to   = datetime.today().strftime("%m/%d/%Y")
 
     params = urllib.parse.urlencode({
-        "api_key": SAM_API_KEY,
-        "limit":   str(limit),
-        "offset":  "0",
-        "postedFrom": posted_from,
-        "postedTo":   posted_to,
-        "ptype": "o",   # o=solicitation, k=combined, p=presolicitation
-        "status": "active",
-        "sortBy": "-modifiedDate",
+        "api_key":    SAM_API_KEY,
+        "limit":      str(limit),
+        "offset":     "0",
+        "postedFrom": posted_from,  # mandatory — 2 years back
+        "postedTo":   posted_to,    # mandatory — today
+        "ptype":      "o",          # o=solicitation only
+        "status":     "active",
+        "sortBy":     "responseDeadLine",  # soonest deadline first (T+100)
     })
 
     url = f"{SAM_OPPS_URL}?{params}"
     print(f"\nSAM.gov Opportunities API (1 call):")
-    print(f"  postedFrom={posted_from}  postedTo={posted_to}  limit={limit}")
+    print(f"  postedFrom={posted_from}  postedTo={posted_to}  sortBy=responseDeadLine (soonest first)  limit={limit}")
 
     req = urllib.request.Request(url, headers={"User-Agent": "Awardopedia/1.0"})
     try:
@@ -118,7 +117,6 @@ def fetch_opportunities(days_back: int = 7, limit: int = 100) -> list:
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--days',    type=int, default=7, help='Days back to sync (default 7)')
     parser.add_argument('--limit',   type=int, default=100, help='Max records (default 100)')
     parser.add_argument('--dry-run', action='store_true', help='Show plan, do not write DB')
     parser.add_argument('--no-summary', action='store_true', help='Skip Ollama summaries')
@@ -131,11 +129,24 @@ if __name__ == '__main__':
     print("=" * 60)
 
     if args.dry_run:
-        print(f"\n[DRY RUN] Would fetch last {args.days} days, limit {args.limit}")
-        print(f"  URL: {SAM_OPPS_URL}?api_key=***&postedFrom=...&limit={args.limit}")
+        _from = (datetime.today() - timedelta(days=730)).strftime("%m/%d/%Y")
+        _to   = datetime.today().strftime("%m/%d/%Y")
+        params = urllib.parse.urlencode({
+            "api_key":    "***",
+            "limit":      str(args.limit),
+            "offset":     "0",
+            "postedFrom": _from,
+            "postedTo":   _to,
+            "ptype":      "o",
+            "status":     "active",
+            "sortBy":     "responseDeadLine",
+        })
+        full_url = f"{SAM_OPPS_URL}?{params}"
+        print(f"\n[DRY RUN] Would fetch {args.limit} active solicitations, soonest deadline first")
+        print(f"  URL: {full_url}")
         sys.exit(0)
 
-    raw_opps = fetch_opportunities(days_back=args.days, limit=args.limit)
+    raw_opps = fetch_opportunities(limit=args.limit)
     if not raw_opps:
         print("No opportunities returned.")
         sys.exit(0)

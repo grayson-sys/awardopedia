@@ -69,15 +69,11 @@ if not SAM_API_KEY:
 #   dollarObligated:[min,max]       — amount range
 #   fundedByAgencyID:{code}         — 9700=DoD, 4700=GSA, 7500=HHS
 #
-# Default: professional services, DoD, small biz set-aside, signed 2024-2025
-# Change this to target different sectors or agencies.
+# Default: definitive contracts, most recently signed first (T-100).
+# No NAICS, no set-aside, no date range — just time-ordered definitive contracts.
+# Sort by -signedDate is added to the URL in fetch_sam_batch().
 
-SAM_QUERY = (
-    "naics:541330~541512~541519~541611~541690 "
-    "typeOfSetAside:8AN~SBA~SDVOSB~WOSB "
-    "contractActionType:D "
-    "signedDate:[20240901,20260101]"
-)
+SAM_QUERY = "contractActionType:D"
 
 SAM_LIMIT = 100   # max per call — do not exceed 100
 SAM_URL   = "https://api.sam.gov/contract-awards/v1/search"
@@ -90,12 +86,15 @@ def fetch_sam_batch(query: str, limit: int, dry_run: bool = False) -> list:
     Returns a list of raw contract dicts including CO data.
     Saves raw response to data/sam_batch_latest.json for inspection.
     """
+    # Note: SAM.gov Contract Awards API does not support custom sortBy.
+    # Records are returned in the API's default order.
+    # We filter to definitive contracts (contractActionType:D) only.
     url = f"{SAM_URL}?api_key={SAM_API_KEY}&q={urllib.parse.quote(query)}&limit={limit}"
 
     print(f"\n{'[DRY RUN] ' if dry_run else ''}SAM.gov Contract Awards API (1 call):")
     print(f"  Query: {query}")
     print(f"  Limit: {limit}")
-    print(f"  URL:   {SAM_URL}?api_key=***&q=...&limit={limit}")
+    print(f"  URL:   {SAM_URL}?api_key=***&q={urllib.parse.quote(query)}&limit={limit}")
 
     if dry_run:
         print("  [DRY RUN] Would make this call. Run without --dry-run to execute.")
@@ -126,7 +125,7 @@ def fetch_sam_batch(query: str, limit: int, dry_run: bool = False) -> list:
         records = data
     elif isinstance(data, dict):
         # Common patterns: data['contractData'], data['results'], data['_embedded'], etc.
-        for key in ['contractData', 'results', 'data', 'contracts', '_embedded']:
+        for key in ['awardSummary', 'contractData', 'results', 'data', 'contracts', '_embedded']:
             if key in data:
                 val = data[key]
                 records = val if isinstance(val, list) else list(val.values())[0] if isinstance(val, dict) else []
@@ -178,6 +177,8 @@ def extract_co_data(sam_record: dict) -> dict:
 
     co['piid'] = (
         sam_record.get('piid') or
+        # awardSummary nested structure
+        _nested(sam_record, 'contractId', 'piid') or
         sam_record.get('contractNumber') or
         sam_record.get('award_id') or
         sam_record.get('id')
