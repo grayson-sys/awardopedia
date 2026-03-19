@@ -144,6 +144,7 @@ def parse_opportunity(raw: dict) -> dict:
     pop = g('placeOfPerformance') or {}
     pop_state = (g('placeOfPerformance.state.code') or
                  pop.get('state', {}).get('code') if isinstance(pop, dict) else None)
+    if pop_state: pop_state = pop_state[:2].upper()  # VARCHAR(2) — truncate if needed
     pop_city  = (g('placeOfPerformance.city.name') or
                  pop.get('city', {}).get('name') if isinstance(pop, dict) else None)
 
