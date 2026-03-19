@@ -1,6 +1,12 @@
 # MagnumHilux Memory
 Last updated: 2026-03-18
 
+## ⚠️ OPERATING RULE — READ THIS FIRST
+**Do NOT chain infrastructure or destructive steps without a checkpoint between each one.**
+An approved plan is NOT a blank check to execute all steps back-to-back.
+After each significant step (delete, deploy, DNS change, DB migration): STOP, report, wait for explicit "go" before the next step.
+YOLO mode is not acceptable even when it works out.
+
 ## ⛔ ABSOLUTE RULE — READ THIS FIRST
 **VERCEL IS ABANDONED. DO NOT USE VERCEL. DO NOT DEPLOY TO VERCEL.**
 **EVERYTHING runs on DigitalOcean (DO App Platform) or the Mac Mini. No exceptions.**
