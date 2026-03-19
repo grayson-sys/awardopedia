@@ -63,6 +63,13 @@
     "status": "complete"
   },
   {
+    "id": "7.5",
+    "title": "Fix SAM.gov ingest pipeline — time-ordered queries, maximum records per call",
+    "description": "Fix both SAM.gov scripts to use time-ordered queries with no choke filters, maximizing records returned per call. Three pillars: SAM.gov (CO email/contacts) + USASpending (58 financial fields) + Ollama (summary). They are NOT alternatives — every record needs all three. Fix sync_opportunities.py to sort by soonest responseDeadLine (T+100). Fix fetch_batch.py to sort by most recent signedDate (T-100). Dry-run both. STOP before burning a real API call — report URL and expected record count to user first and wait for go.",
+    "acceptance_criteria": "sync_opportunities.py dry-run shows correct URL: status=active, sortBy=responseDeadLine ascending, limit=100, no postedFrom/postedTo choke filter. fetch_batch.py dry-run shows correct URL: no NAICS/set-aside filters, sorted by most recent date, limit=100. Both scripts correctly pair SAM.gov data with USASpending enrichment. Dry-run output reported to user. REAL API call only after user says go.",
+    "status": "complete"
+  },
+  {
     "id": 8,
     "title": "Report generation + Stripe + PDF/CSV + caching",
     "description": "Claude-powered reports. Credit system. Stripe Checkout for credit packs. PDF + CSV via pdfkit. Report caching in DO Spaces.",

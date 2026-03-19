@@ -23,7 +23,7 @@ Cloudflare DNS will be updated to point to DO once the React+Vite app is deploye
 DO NOT touch or redeploy the Vercel project. Let it rot.
 
 Current phase: 8 — Report generation + Stripe + PDF/CSV + caching
-NOTE: Phase 7 (SEO static pages) complete. Phase 8 is next.
+NOTE: Phases 7 and 7.5 complete. Phase 8 is next.
 
 ## Stack
 Frontend: React + Vite (~/awardopedia/web/) — DO App Platform (static, free tier)
@@ -59,6 +59,7 @@ Build: cd ~/awardopedia/web && npx vite build --mode development
 - Phase 6: Public API v1, API key system, rate limiting, ApiKeys.jsx, Terms.jsx, llms.txt, TOS ✅
 - Phase 6B: Security hardening — per-IP rate limits, input validation, security headers, robots.txt, honeypots, abuse logging, report endpoint protection, safe error handling ✅
 - Phase 7: SEO static HTML pages — generate_static.py, DO Spaces upload, sitemap.xml, LaunchAgent daily 5am ✅
+- Phase 7.5: Fix SAM.gov ingest — time-ordered queries (T-100 contracts, T+100 opportunities) + INGEST_METHODOLOGY.md playbook ✅
 
 ## Current DB state
 - contracts: 1 record (NISGAA CIOPS LLC / FA877324C0001) — waiting on 6pm SAM.gov batch for 100 more
