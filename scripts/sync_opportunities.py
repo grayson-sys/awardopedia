@@ -73,7 +73,8 @@ def fetch_opportunities(limit: int = 100) -> list:
     # postedFrom/postedTo are MANDATORY on this API.
     # Use a wide 2-year window so we don't choke the results.
     # sortBy=responseDeadLine (ascending) gives us soonest-closing first (T+100).
-    posted_from = (datetime.today() - timedelta(days=730)).strftime("%m/%d/%Y")
+    # SAM.gov enforces a max 1-year date range on this endpoint.
+    posted_from = (datetime.today() - timedelta(days=364)).strftime("%m/%d/%Y")
     posted_to   = datetime.today().strftime("%m/%d/%Y")
 
     params = urllib.parse.urlencode({
@@ -129,7 +130,7 @@ if __name__ == '__main__':
     print("=" * 60)
 
     if args.dry_run:
-        _from = (datetime.today() - timedelta(days=730)).strftime("%m/%d/%Y")
+        _from = (datetime.today() - timedelta(days=364)).strftime("%m/%d/%Y")
         _to   = datetime.today().strftime("%m/%d/%Y")
         params = urllib.parse.urlencode({
             "api_key":    "***",
