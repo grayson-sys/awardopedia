@@ -152,6 +152,24 @@ def _clean_contact(contact: dict) -> dict:
             phone = extracted_phone
         name = ''  # clear garbage name — will derive from email below
 
+    # ── Step 1b: Detect contact block jammed into name field ───────────────
+    # Pattern: "N732.73, Phone (215)697-6566, Email user@navy.mil Firstname Lastname"
+    if name and ('Phone' in name or 'Email' in name or _re.search(r'[A-Z]\d{3}', name)):
+        # Extract phone if present
+        ph_match = _re.search(r'Phone\s*\(?(\d{3})\)?\s*[\-.]?(\d{3})[\-.]?(\d{4})', name)
+        if ph_match and not phone:
+            phone = f'({ph_match.group(1)}) {ph_match.group(2)}-{ph_match.group(3)}'
+        # Extract email if present
+        em_match = _re.search(r'Email\s+(\S+@\S+)', name)
+        if em_match and not email:
+            email = em_match.group(1)
+        # Extract the actual human name (usually at the end after .mil/.gov)
+        name_at_end = _re.search(r'(?:\.mil|\.gov|\.com)\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s*$', name)
+        if name_at_end:
+            name = name_at_end.group(1).strip()
+        else:
+            name = ''  # Will derive from email below
+
     # ── Step 2: Clean up garbage names ─────────────────────────────────────
     GARBAGE = {'n/a', 'na', 'none', 'unknown', 'tbd', 'see email', '—', '-', '.'}
     if name.lower().strip('., ') in GARBAGE:
