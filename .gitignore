@@ -9,3 +9,6 @@ ingestion_progress.json
 .vercel
 static/
 .venv/
+data/pdfs/
+data/raw_opportunities/
+data/sam_opps_sync_latest.json

@@ -1,16 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import Nav from './components/Nav'
 import ContractDetail from './components/ContractDetail'
 import OpportunityDetail from './components/OpportunityDetail'
 import InfoIcon from './components/InfoIcon'
 import Terms from './pages/Terms'
 import ApiKeys from './pages/ApiKeys'
+import Admin from './pages/Admin'
+import { topAgencyLabel as topAgency } from './utils/agencyNorm'
+import { toTitleCase } from './utils/textNorm'
 import './index.css'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 function fmt(n) {
   if (n == null) return '—'
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+function fmtOppValue(o) {
+  if (o.estimated_value_max) return fmt(o.estimated_value_max)
+  if (o.intel_estimated_value && o.intel_estimated_value !== 'Not published') return o.intel_estimated_value
+  return '—'
 }
 
 function daysLeft(dateStr) {
@@ -19,23 +29,108 @@ function daysLeft(dateStr) {
 }
 
 function dateColor(dateStr) {
-  const days = daysLeft(dateStr)
-  if (days == null) return undefined
-  if (days < 0) return '#dc3545'         // past → red
-  if (days < 183) return '#E9A820'       // < ~6 months → amber
-  return '#28a745'                        // 6+ months → green
+  const d = daysLeft(dateStr)
+  if (d == null) return undefined
+  if (d < 0) return '#dc3545'       // past → red
+  if (d < 90) return '#E9A820'      // today through 3 months → yellow
+  return '#28a745'                    // 3+ months → green
 }
 
 function ExpiryCell({ dateStr }) {
-  if (!dateStr) return <span>—</span>
-  const date = new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  if (!dateStr) return <span style={{ color: '#aab' }}>—</span>
+  const date = new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
   const color = dateColor(dateStr)
-  return <span style={color ? { color } : undefined}>{date}</span>
+  return <span style={color ? { color, fontWeight: 500 } : undefined}>{date}</span>
 }
 
-// ── App ────────────────────────────────────────────────────────────────────
+function DeadlineBadge({ dateStr }) {
+  const d = daysLeft(dateStr)
+  if (d == null) return null
+  if (d < 0) return <span className="badge badge-danger">Closed</span>
+  if (d === 0) return <span className="badge badge-danger">Closes today</span>
+  if (d <= 7) return <span className="badge badge-danger">{d}d left</span>
+  if (d <= 30) return <span className="badge badge-amber">{d}d left</span>
+  return null
+}
+
+// Set-aside code → plain English (same map as OpportunityDetail)
+const SET_ASIDE_LABELS = {
+  'SBA':       'Small Business',
+  'SBP':       'Small Business',
+  'SDVOSBC':   'Service-Disabled Veteran-Owned',
+  'SDVOSB':    'Service-Disabled Veteran-Owned',
+  'WOSBC':     'Women-Owned Small Business',
+  'WOSB':      'Women-Owned Small Business',
+  'EDWOSBC':   'Econ. Disadvantaged Women-Owned',
+  'EDWOSB':    'Econ. Disadvantaged Women-Owned',
+  'HZC':       'HUBZone',
+  'HZS':       'HUBZone',
+  '8AN':       '8(a) (Minority-Owned)',
+  '8A':        '8(a) (Minority-Owned)',
+  'VSA':       'Veteran-Owned',
+  'VSB':       'Veteran-Owned',
+  'TOTAL':     'Total Small Business',
+  'Small Business': 'Small Business',
+}
+function expandSetAside(raw) {
+  if (!raw) return null
+  return SET_ASIDE_LABELS[raw] || SET_ASIDE_LABELS[raw.toUpperCase()] || raw
+}
+
+// Build unique sorted option lists from data
+function uniqueVals(arr, key, transform) {
+  const set = new Set()
+  for (const item of arr) {
+    let v = item[key]
+    if (v != null && v !== '') {
+      if (transform) v = transform(v)
+      set.add(v)
+    }
+  }
+  return [...set].sort()
+}
+
+// ── Pagination ─────────────────────────────────────────────────────────────
+function Pagination({ total, page, pageSize, onChange }) {
+  const totalPages = Math.ceil(total / pageSize)
+  if (totalPages <= 1) return null
+  const start = (page - 1) * pageSize + 1
+  const end = Math.min(page * pageSize, total)
+  return (
+    <div className="pagination">
+      <span className="text-muted text-sm">Showing {start}–{end} of {total}</span>
+      <div className="pagination-btns">
+        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>Previous</button>
+        <span className="text-sm" style={{ padding: '0 8px' }}>Page {page} of {totalPages}</span>
+        <button className="btn btn-ghost btn-sm" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Next</button>
+      </div>
+    </div>
+  )
+}
+
+// ── US States + territories + military codes ──────────────────────────────
+const US_STATES = {
+  AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',
+  CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',
+  GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',
+  IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',
+  MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',
+  MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',
+  NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',
+  OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',
+  SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',
+  VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',
+  // Territories
+  GU:'Guam',PR:'Puerto Rico',VI:'U.S. Virgin Islands',AS:'American Samoa',MP:'Northern Mariana Islands',
+  // Military
+  AE:'Armed Forces Europe',AP:'Armed Forces Pacific',AA:'Armed Forces Americas',
+}
+function stateName(code) { return US_STATES[code] || code || '—' }
+
+// ── App ─────────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [view, setView] = useState('contracts') // 'contracts' | 'opportunities' | 'contract-detail' | 'opp-detail'
+  const [view, setView] = useState('home')
   const [selectedContract, setSelectedContract] = useState(null)
   const [selectedOpp, setSelectedOpp] = useState(null)
 
@@ -44,6 +139,20 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // Search & filters
+  const [query, setQuery] = useState('')
+  const [activeTab, setActiveTab] = useState('opportunities') // default to opportunities
+  const [filterState, setFilterState] = useState('')
+  const [filterSetAside, setFilterSetAside] = useState('')
+  const [filterNaics, setFilterNaics] = useState('')
+  const [filterAgency, setFilterAgency] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 10
+
+  const searchRef = useRef(null)
+
+  // ── Data loading ────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       try {
@@ -55,11 +164,26 @@ export default function App() {
         ])
         if (!cRes.ok) throw new Error(`Contracts API: ${cRes.status}`)
         const cData = await cRes.json()
-        setContracts(cData.data || [])
+        const contractList = cData.data || []
+        setContracts(contractList)
 
+        let oppList = []
         if (oRes.ok) {
           const oData = await oRes.json()
-          setOpportunities(oData.data || [])
+          oppList = oData.data || []
+          setOpportunities(oppList)
+        }
+
+        // Deep-link support
+        const params = new URLSearchParams(window.location.search)
+        const oppId = params.get('opp')
+        const contractId = params.get('contract')
+        if (oppId) {
+          const match = oppList.find(o => o.notice_id === oppId)
+          if (match) { setSelectedOpp(match); setView('opp-detail') }
+        } else if (contractId) {
+          const match = contractList.find(c => c.piid === contractId)
+          if (match) { setSelectedContract(match); setView('contract-detail') }
         }
       } catch (e) {
         setError(e.message)
@@ -70,174 +194,408 @@ export default function App() {
     load()
   }, [])
 
-  const activeTab = view === 'contracts' || view === 'contract-detail' ? 'contracts'
-    : view === 'opportunities' || view === 'opp-detail' ? 'opportunities'
+  // ── Filter options (derived from data) ─────────────────────────────────
+  const stateOptions = useMemo(() => {
+    const states = new Set()
+    contracts.forEach(c => { if (c.recipient_state) states.add(c.recipient_state) })
+    opportunities.forEach(o => { if (o.place_of_performance_state) states.add(o.place_of_performance_state) })
+    return [...states].filter(s => US_STATES[s]).sort()
+  }, [contracts, opportunities])
+
+  const setAsideOptions = useMemo(() => {
+    const vals = new Set()
+    contracts.forEach(c => { if (c.set_aside_type) vals.add(c.set_aside_type) })
+    opportunities.forEach(o => { if (o.set_aside_type) vals.add(o.set_aside_type) })
+    return [...vals].sort()
+  }, [contracts, opportunities])
+
+  const agencyOptions = useMemo(() => {
+    const vals = new Set()
+    contracts.forEach(c => vals.add(topAgency(c.agency_name)))
+    opportunities.forEach(o => vals.add(topAgency(o.agency_name)))
+    vals.delete('—')
+    return [...vals].sort()
+  }, [contracts, opportunities])
+
+  const naicsOptions = useMemo(() => {
+    const map = new Map()
+    const addNaics = (code, desc) => {
+      if (code && !map.has(code)) {
+        map.set(code, desc ? toTitleCase(desc) : code)
+      }
+    }
+    contracts.forEach(c => addNaics(c.naics_code, c.naics_description))
+    opportunities.forEach(o => addNaics(o.naics_code, o.naics_description))
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [contracts, opportunities])
+
+  // ── Filtering logic ────────────────────────────────────────────────────
+  const q = query.toLowerCase().trim()
+
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      if (q && ![
+        c.recipient_name, c.agency_name, c.naics_description, c.naics_code,
+        c.psc_description, c.description, c.llama_summary, c.piid, c.recipient_state,
+      ].some(v => v && String(v).toLowerCase().includes(q))) return false
+      if (filterState && c.recipient_state !== filterState) return false
+      if (filterSetAside && c.set_aside_type !== filterSetAside) return false
+      if (filterNaics && c.naics_code !== filterNaics) return false
+      if (filterAgency && topAgency(c.agency_name) !== filterAgency) return false
+      return true
+    })
+  }, [contracts, q, filterState, filterSetAside, filterNaics, filterAgency])
+
+  const filteredOpportunities = useMemo(() => {
+    return opportunities.filter(o => {
+      // Only show open opportunities (deadline in future or null)
+      const d = daysLeft(o.response_deadline)
+      if (d !== null && d < 0) return false
+
+      if (q && ![
+        o.title, o.agency_name, o.naics_description, o.naics_code,
+        o.psc_description, o.description, o.llama_summary, o.notice_id,
+        o.place_of_performance_state, o.set_aside_type,
+      ].some(v => v && String(v).toLowerCase().includes(q))) return false
+      if (filterState && o.place_of_performance_state !== filterState) return false
+      if (filterSetAside && o.set_aside_type !== filterSetAside) return false
+      if (filterNaics && o.naics_code !== filterNaics) return false
+      if (filterAgency && topAgency(o.agency_name) !== filterAgency) return false
+      return true
+    })
+  }, [opportunities, q, filterState, filterSetAside, filterNaics, filterAgency])
+
+  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency
+  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setPage(1) }
+
+  // Reset page when search/filters/tab change
+  useEffect(() => { setPage(1) }, [q, filterState, filterSetAside, filterNaics, filterAgency, activeTab])
+
+  // ── Navigation helpers ─────────────────────────────────────────────────
+  function goSearch() {
+    // Auto-select the tab that has results for the current query
+    if (q) {
+      const oppCount = filteredOpportunities.length
+      const conCount = filteredContracts.length
+      if (oppCount === 0 && conCount > 0) setActiveTab('contracts')
+      else if (conCount === 0 && oppCount > 0) setActiveTab('opportunities')
+      // If both have results, keep current tab
+    }
+    setView('results')
+  }
+
+  function openContract(c) {
+    setSelectedContract(c)
+    setView('contract-detail')
+    window.history.replaceState(null, '', `?contract=${c.piid}`)
+  }
+
+  function openOpp(o) {
+    setSelectedOpp(o)
+    setView('opp-detail')
+    window.history.replaceState(null, '', `?opp=${o.notice_id}`)
+  }
+
+  function goHome() {
+    setView('home')
+    setQuery('')
+    clearFilters()
+    window.history.replaceState(null, '', '/')
+  }
+
+  function handleSearchSubmit(e) {
+    e.preventDefault()
+    goSearch()
+  }
+
+  const navPage = view === 'contract-detail' ? 'contracts'
+    : view === 'opp-detail' ? 'opportunities'
+    : view === 'results' ? activeTab
     : view === 'api' ? 'api'
     : view === 'terms' ? 'terms'
-    : 'contracts'
+    : null
 
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div>
-      <Nav
-        activePage={activeTab}
-        onHome={() => setView('contracts')}
-        onNavigate={(page) => {
-          if (['contracts', 'opportunities', 'api', 'terms'].includes(page)) setView(page)
-        }}
-      />
+    <div className="app">
+      {view !== 'home' && (
+        <Nav
+          activePage={navPage}
+          onHome={goHome}
+          onNavigate={(page) => {
+            if (page === 'contracts') { setActiveTab('contracts'); setView('results') }
+            else if (page === 'opportunities') { setActiveTab('opportunities'); setView('results') }
+            else if (page === 'api') setView('api')
+            else if (page === 'terms') setView('terms')
+          }}
+        />
+      )}
 
-      {/* Page header */}
-      <div className="page-header">
-        <div className="container">
-          {(view === 'contracts' || view === 'opportunities') && (
-            <>
-              <h1>{view === 'contracts' ? 'Federal Contracts' : 'Upcoming Opportunities'}</h1>
-              <p>{view === 'contracts'
-                ? 'Awarded federal contracts from USASpending.gov'
-                : 'Open solicitations from SAM.gov'}
-              </p>
-            </>
-          )}
-        </div>
-      </div>
+      {/* ═══════════════════════════════════════════════════════════════════
+          HOME — Search-first landing page
+          ═══════════════════════════════════════════════════════════════════ */}
+      {view === 'home' && (
+        <div className="home">
+          <div className="home-hero">
+            <div className="home-brand">
+              <img src="/logo-icon-navy-clean.jpg" alt="Awardopedia" width={48} height={48} style={{ borderRadius: 8 }} />
+              <h1>Award<span>opedia</span></h1>
+            </div>
+            <p className="home-subtitle">Free federal contract intelligence for small businesses</p>
 
-      {/* Tab strip */}
-      {(view === 'contracts' || view === 'opportunities') && (
-        <div className="container">
-          <div className="tabs mt-16">
-            <button className={`tab ${view === 'contracts' ? 'active' : ''}`} onClick={() => setView('contracts')}>
-              Contracts {contracts.length > 0 && <span style={{ marginLeft: 4, fontSize: 11, opacity: 0.7 }}>({contracts.length})</span>}
-            </button>
-            <button className={`tab ${view === 'opportunities' ? 'active' : ''}`} onClick={() => setView('opportunities')}>
-              Opportunities {opportunities.length > 0 && <span style={{ marginLeft: 4, fontSize: 11, opacity: 0.7 }}>({opportunities.length})</span>}
-            </button>
+            <form className="home-search" onSubmit={handleSearchSubmit}>
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search contracts and opportunities — try &quot;janitorial&quot;, &quot;IT services&quot;, or a NAICS code"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                autoFocus
+              />
+              <button type="submit" className="btn btn-navy">Search</button>
+            </form>
+
+            <div className="home-quick">
+              <button onClick={() => { setActiveTab('opportunities'); goSearch() }}>
+                Open Opportunities <span className="home-count">{opportunities.filter(o => daysLeft(o.response_deadline) === null || daysLeft(o.response_deadline) >= 0).length}</span>
+              </button>
+              <button onClick={() => { setActiveTab('contracts'); goSearch() }}>
+                Past Contracts <span className="home-count">{contracts.length}</span>
+              </button>
+            </div>
+
+            {loading && <p className="text-muted mt-16">Loading data...</p>}
+            {error && <p style={{ color: 'var(--color-danger)', marginTop: 16 }}>Error: {error}</p>}
           </div>
+
+          <footer className="home-footer">
+            <span>Data from <a href="https://usaspending.gov" target="_blank" rel="noopener">USASpending.gov</a> and <a href="https://sam.gov" target="_blank" rel="noopener">SAM.gov</a></span>
+            <span>
+              <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a>
+              {' · '}
+              <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a>
+            </span>
+          </footer>
         </div>
       )}
 
-      {/* ── Contracts table ── */}
-      {view === 'contracts' && (
-        <div className="container mt-16">
-          {loading && <div className="text-muted" style={{ padding: '24px 0' }}>Loading contracts...</div>}
-          {error && <div style={{ padding: '24px 0', color: 'var(--color-danger)' }}>Error: {error}</div>}
-          {!loading && !error && contracts.length === 0 && (
-            <div className="text-muted" style={{ padding: '24px 0' }}>No contracts yet.</div>
-          )}
-          {!loading && contracts.length > 0 && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Agency <InfoIcon field="Agency" /></th>
-                    <th>NAICS <InfoIcon field="NAICS" /></th>
-                    <th>State <InfoIcon field="State" /></th>
-                    <th>Start Date <InfoIcon field="StartDate" /></th>
-                    <th>End Date <InfoIcon field="EndDate" /></th>
-                    <th style={{ textAlign: 'right' }}>Amount <InfoIcon field="Amount" /></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contracts.map(c => (
-                    <tr key={c.piid} onClick={() => { setSelectedContract(c); setView('contract-detail') }}>
-                      <td>
-                        <div>{c.agency_name || '—'}</div>
-                        {c.sub_agency_name && <div className="text-muted text-sm">{c.sub_agency_name}</div>}
-                      </td>
-                      <td>{c.naics_code ? `${c.naics_code} — ${c.naics_description || ''}`.trim() : '—'}</td>
-                      <td>{c.recipient_state || '—'}</td>
-                      <td><ExpiryCell dateStr={c.start_date} /></td>
-                      <td><ExpiryCell dateStr={c.end_date} /></td>
-                      <td><div className="amount">{fmt(c.award_amount)}</div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* ═══════════════════════════════════════════════════════════════════
+          RESULTS — Search results with tabs and filters
+          ═══════════════════════════════════════════════════════════════════ */}
+      {view === 'results' && (
+        <div className="results-page">
+          {/* Search bar (sticky) */}
+          <div className="results-search-bar">
+            <div className="container">
+              <form className="results-search" onSubmit={e => e.preventDefault()}>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className={`btn btn-ghost btn-sm ${showFilters ? 'active' : ''}`}
+                  onClick={() => setShowFilters(!showFilters)}
+                >
+                  Filters {hasActiveFilters && <span className="filter-dot" />}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Filters panel */}
+          {showFilters && (
+            <div className="filters-panel">
+              <div className="container">
+                <div className="filters-grid">
+                  <div className="filter-group">
+                    <label>State</label>
+                    <select value={filterState} onChange={e => setFilterState(e.target.value)}>
+                      <option value="">All states</option>
+                      {stateOptions.map(s => <option key={s} value={s}>{s} — {US_STATES[s]}</option>)}
+                    </select>
+                  </div>
+                  <div className="filter-group">
+                    <label>Set-Aside</label>
+                    <select value={filterSetAside} onChange={e => setFilterSetAside(e.target.value)}>
+                      <option value="">All set-asides</option>
+                      {setAsideOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="filter-group">
+                    <label>Agency</label>
+                    <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)}>
+                      <option value="">All agencies</option>
+                      {agencyOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <div className="filter-group">
+                    <label>NAICS Industry</label>
+                    <select value={filterNaics} onChange={e => setFilterNaics(e.target.value)}>
+                      <option value="">All industries</option>
+                      {naicsOptions.map(([code, desc]) => <option key={code} value={code}>{code} — {desc}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {hasActiveFilters && (
+                  <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear all filters</button>
+                )}
+              </div>
             </div>
           )}
+
+          <div className="container mt-16">
+            {/* Tabs */}
+            <div className="tabs">
+              <button className={`tab ${activeTab === 'opportunities' ? 'active' : ''}`} onClick={() => setActiveTab('opportunities')}>
+                Open Opportunities <span className="tab-count">{filteredOpportunities.length}</span>
+              </button>
+              <button className={`tab ${activeTab === 'contracts' ? 'active' : ''}`} onClick={() => setActiveTab('contracts')}>
+                Past Contracts <span className="tab-count">{filteredContracts.length}</span>
+              </button>
+            </div>
+
+            {/* ── Opportunities table ── */}
+            {activeTab === 'opportunities' && (
+              <>
+                {filteredOpportunities.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No open opportunities match your search{hasActiveFilters && ' and filters'}.</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Opportunity <InfoIcon field="Agency" /></th>
+                            <th>Industry <InfoIcon field="NAICS" /></th>
+                            <th>Where <InfoIcon field="State" /></th>
+                            <th>Deadline <InfoIcon field="Window" /></th>
+                            <th style={{ textAlign: 'right' }}>Value <InfoIcon field="EstValue" /></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredOpportunities.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(o => (
+                            <tr key={o.notice_id} onClick={() => openOpp(o)}>
+                              <td>
+                                <div className="row-title">{o.title || '—'}</div>
+                                <div className="row-meta">{topAgency(o.agency_name)}</div>
+                                {o.set_aside_type && <span className="badge badge-navy" style={{ marginTop: 3 }}>{expandSetAside(o.set_aside_type)}</span>}
+                              </td>
+                              <td>
+                                {o.naics_description
+                                  ? <span title={`${toTitleCase(o.naics_description)} (${o.naics_code})`}>{toTitleCase(o.naics_description).slice(0, 36)}{toTitleCase(o.naics_description).length > 36 ? '...' : ''}</span>
+                                  : <span className="text-muted">{o.naics_code || '—'}</span>
+                                }
+                              </td>
+                              <td>{stateName(o.place_of_performance_state)}</td>
+                              <td>
+                                <ExpiryCell dateStr={o.response_deadline} />
+                                <DeadlineBadge dateStr={o.response_deadline} />
+                              </td>
+                              <td><div className="amount">{fmtOppValue(o)}</div></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination total={filteredOpportunities.length} page={page} pageSize={PAGE_SIZE} onChange={setPage} />
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── Contracts table ── */}
+            {activeTab === 'contracts' && (
+              <>
+                {filteredContracts.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No contracts match your search{hasActiveFilters && ' and filters'}.</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Contractor & Agency <InfoIcon field="Agency" /></th>
+                            <th>Industry <InfoIcon field="NAICS" /></th>
+                            <th>Where <InfoIcon field="State" /></th>
+                            <th>Period <InfoIcon field="Period" /></th>
+                            <th style={{ textAlign: 'right' }}>Amount <InfoIcon field="Amount" /></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredContracts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(c => (
+                            <tr key={c.piid} onClick={() => openContract(c)}>
+                              <td>
+                                <div className="row-title">{c.recipient_name || '—'}</div>
+                                <div className="row-meta">{topAgency(c.agency_name)}</div>
+                                {c.set_aside_type && <span className="badge badge-navy" style={{ marginTop: 3 }}>{expandSetAside(c.set_aside_type)}</span>}
+                              </td>
+                              <td>
+                                {c.naics_description
+                                  ? <span title={`${toTitleCase(c.naics_description)} (${c.naics_code})`}>{toTitleCase(c.naics_description).slice(0, 36)}{toTitleCase(c.naics_description).length > 36 ? '...' : ''}</span>
+                                  : <span className="text-muted">{c.naics_code || '—'}</span>
+                                }
+                              </td>
+                              <td>{stateName(c.recipient_state)}</td>
+                              <td>
+                                <ExpiryCell dateStr={c.start_date} />
+                                <span style={{ color: '#aab', margin: '0 4px' }}>-</span>
+                                <ExpiryCell dateStr={c.end_date} />
+                              </td>
+                              <td><div className="amount">{fmt(c.award_amount)}</div></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination total={filteredContracts.length} page={page} pageSize={PAGE_SIZE} onChange={setPage} />
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <footer className="footer">
+            <div className="container">
+              <div className="footer-inner">
+                <span><strong>Awardopedia</strong> — Free federal contract intelligence for small businesses.</span>
+                <span>Data from USASpending.gov and SAM.gov · <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a> · <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a> · <a href="#" onClick={e => { e.preventDefault(); setView('admin') }}>Admin</a></span>
+              </div>
+            </div>
+          </footer>
         </div>
       )}
 
-      {/* ── Opportunities table ── */}
-      {view === 'opportunities' && (
-        <div className="container mt-16">
-          {loading && <div className="text-muted" style={{ padding: '24px 0' }}>Loading opportunities...</div>}
-          {!loading && opportunities.length === 0 && (
-            <div className="text-muted" style={{ padding: '24px 0' }}>
-              No opportunities yet — Phase 2 will fetch from SAM.gov.
-            </div>
-          )}
-          {!loading && opportunities.length > 0 && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Agency <InfoIcon field="Agency" /></th>
-                    <th>NAICS <InfoIcon field="NAICS" /></th>
-                    <th>State <InfoIcon field="State" /></th>
-                    <th>Posted <InfoIcon field="PostedDate" /></th>
-                    <th>Deadline <InfoIcon field="ResponseDeadline" /></th>
-                    <th style={{ textAlign: 'right' }}>Est. Value <InfoIcon field="EstValue" /></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {opportunities.map(o => (
-                    <tr key={o.notice_id} onClick={() => { setSelectedOpp(o); setView('opp-detail') }}>
-                      <td>
-                        <div>{o.agency_name || '—'}</div>
-                        {o.sub_agency_name && <div className="text-muted text-sm">{o.sub_agency_name}</div>}
-                      </td>
-                      <td>{o.naics_code ? `${o.naics_code} — ${o.naics_description || ''}`.trim() : '—'}</td>
-                      <td>{o.place_of_performance_state || '—'}</td>
-                      <td><ExpiryCell dateStr={o.posted_date} /></td>
-                      <td><ExpiryCell dateStr={o.response_deadline} /></td>
-                      <td><div className="amount">{fmt(o.estimated_value_max)}</div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Detail views ── */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          DETAIL VIEWS
+          ═══════════════════════════════════════════════════════════════════ */}
       {view === 'contract-detail' && selectedContract && (
         <ContractDetail
           contract={selectedContract}
-          onBack={() => setView('contracts')}
+          onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}
       {view === 'opp-detail' && selectedOpp && (
         <OpportunityDetail
           opp={selectedOpp}
-          onBack={() => setView('opportunities')}
+          onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}
 
-      {/* ── API Keys page ── */}
-      {view === 'api' && (
-        <ApiKeys onBack={(target) => {
-          if (target === 'terms') setView('terms')
-          else setView('contracts')
-        }} />
-      )}
-
-      {/* ── Terms page ── */}
-      {view === 'terms' && (
-        <Terms onBack={() => setView('contracts')} />
-      )}
-
-      {/* Footer */}
-      {(view === 'contracts' || view === 'opportunities') && (
-        <footer className="footer">
-          <div className="container">
-            <div className="footer-inner">
-              <span><strong>Awardopedia</strong> — The encyclopedia of federal contract awards.</span>
-              <span>Data from USASpending.gov and SAM.gov · <a href="#" onClick={(e) => { e.preventDefault(); setView('api') }}>API</a> · <a href="#" onClick={(e) => { e.preventDefault(); setView('terms') }}>Terms</a></span>
-            </div>
-          </div>
-        </footer>
-      )}
+      {/* API & Terms */}
+      {view === 'api' && <ApiKeys onBack={(target) => target === 'terms' ? setView('terms') : goHome()} />}
+      {view === 'terms' && <Terms onBack={goHome} />}
+      {view === 'admin' && <Admin onBack={goHome} />}
     </div>
   )
 }

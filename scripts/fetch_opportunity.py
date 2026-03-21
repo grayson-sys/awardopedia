@@ -119,6 +119,184 @@ def load_from_file(path: str, limit: int = None) -> list:
     return opps
 
 
+# ── Contact data cleanup ─────────────────────────────────────────────────────
+
+import re as _re
+
+def _clean_contact(contact: dict) -> dict:
+    """
+    Fix common SAM.gov contact data quality issues:
+      1. Phone number stuffed into the name field → move to phone, derive name from email
+      2. Name is blank/garbage but email has firstname.lastname@ → derive name
+      3. Name contains "Telephone:", "Phone:", "N/A" etc. → clean up
+    Returns a new dict with cleaned fields.
+    """
+    if not contact:
+        return contact
+
+    name  = (contact.get('fullName') or contact.get('name') or '').strip()
+    email = (contact.get('email') or '').strip()
+    phone = (contact.get('phone') or '').strip()
+
+    # ── Step 1: Detect phone number in the name field ──────────────────────
+    phone_in_name = _re.match(
+        r'^(?:telephone|phone|tel|ph)[:\s]*(\+?[\d\s\-().ext]+)$', name, _re.IGNORECASE
+    )
+    if not phone_in_name:
+        # Also catch bare phone numbers (10+ digits) as the entire name
+        phone_in_name = _re.match(r'^(\d[\d\s\-().]{8,})$', name)
+
+    if phone_in_name:
+        extracted_phone = phone_in_name.group(1).strip()
+        if not phone:
+            phone = extracted_phone
+        name = ''  # clear garbage name — will derive from email below
+
+    # ── Step 2: Clean up garbage names ─────────────────────────────────────
+    GARBAGE = {'n/a', 'na', 'none', 'unknown', 'tbd', 'see email', '—', '-', '.'}
+    if name.lower().strip('., ') in GARBAGE:
+        name = ''
+
+    # ── Step 2b: Flip "Last, First" → "First Last" ──────────────────────
+    if name and ',' in name:
+        parts = [p.strip() for p in name.split(',', 1)]
+        if len(parts) == 2 and parts[0] and parts[1]:
+            # Only flip if both parts look like names (not "Jr" or "III")
+            suffixes = {'jr', 'sr', 'ii', 'iii', 'iv', 'phd', 'md', 'esq'}
+            if parts[1].lower().strip('.') not in suffixes:
+                name = f"{parts[1]} {parts[0]}"
+
+    # ── Step 3: Derive name from email if still blank ──────────────────────
+    if not name and email and '@' in email:
+        local = email.split('@')[0]
+        # Handle formats: firstname.lastname, firstname.m.lastname, firstname_lastname
+        parts = _re.split(r'[._]', local)
+        # Filter out middle initials (single chars) and military suffixes (civ, mil, ctr)
+        SKIP = {'civ', 'mil', 'ctr', 'ctr1', 'ctr2', 'usa', 'usn', 'usaf', 'usmc'}
+        name_parts = [p.capitalize() for p in parts
+                      if len(p) > 1 and p.lower() not in SKIP]
+        if name_parts:
+            name = ' '.join(name_parts)
+
+    # ── Step 4: Title-case ALL CAPS names ──────────────────────────────
+    if name and len(name) > 3 and name == name.upper():
+        name = ' '.join(w.capitalize() for w in name.split())
+
+    # ── Step 5: Strip trailing numeric suffixes ("Cody Smith26" → "Cody Smith")
+    if name:
+        name = _re.sub(r'\d+$', '', name).strip()
+
+    return {**contact, 'fullName': name or None, 'phone': phone or None}
+
+
+# ── Title cleanup ────────────────────────────────────────────────────────────
+
+# Common government abbreviations that appear in titles
+_TITLE_ABBREV = {
+    'ASS':    'Assembly',
+    'ASSY':   'Assembly',
+    'MAINT':  'Maintenance',
+    'EQUIP':  'Equipment',
+    'SVCS':   'Services',
+    'SVC':    'Service',
+    'MGMT':   'Management',
+    'GOVT':   'Government',
+    'ADMIN':  'Administrative',
+    'CONSTR': 'Construction',
+    'MOD':    'Modification',
+    'INSTAL': 'Installation',
+    'RQMT':   'Requirement',
+    'RQMTS':  'Requirements',
+    'ACQSTN': 'Acquisition',
+    'MFG':    'Manufacturing',
+    'TECH':   'Technical',
+    'ELEC':   'Electrical',
+    'MECH':   'Mechanical',
+    'FAC':    'Facility',
+    'BLDG':   'Building',
+    'OPS':    'Operations',
+    'TRNG':   'Training',
+    'COMMUN': 'Communications',
+    'INFO':   'Information',
+    'SYS':    'Systems',
+    'SUPP':   'Support',
+}
+
+def _clean_title(raw: str) -> str:
+    """
+    Clean up SAM.gov opportunity titles:
+      1. Strip leading PSC/category codes (e.g. "16--", "Z1DA--", "Y1DA--", "H930--")
+      2. Fix ALL CAPS → Title Case
+      3. Expand common abbreviations (ASS→Assembly, MAINT→Maintenance, etc.)
+      4. Fix "In Repair/Modification Of" → "Repair and Modification"
+      5. Preserve intentional codes and proper nouns
+    """
+    if not raw:
+        return raw
+
+    title = raw.strip()
+
+    # Strip leading PSC/category codes: "16--", "Z1DA--", "H930--"
+    title = _re.sub(r'^[A-Z0-9]{1,6}--\s*', '', title)
+
+    # If ALL CAPS (or mostly caps), convert to title case with abbreviation expansion
+    upper_chars = sum(1 for c in title if c.isupper())
+    alpha_chars = sum(1 for c in title if c.isalpha())
+    is_mostly_caps = alpha_chars > 3 and upper_chars / max(alpha_chars, 1) > 0.7
+
+    if is_mostly_caps:
+        # Normalize comma-separated tokens: "ASS,CHASSIS" → "ASS, CHASSIS"
+        title = _re.sub(r',(?!\s)', ', ', title)
+
+        words = title.split()
+        cleaned = []
+        LOWER_WORDS = {'in', 'of', 'at', 'to', 'by', 'for', 'and', 'the', 'or', 'on', 'a', 'an'}
+        for i, w in enumerate(words):
+            # Strip trailing punctuation for lookup
+            punct = ''
+            if w and w[-1] in ',.;:':
+                punct = w[-1]
+                w = w[:-1]
+
+            upper = w.upper()
+            if upper in _TITLE_ABBREV:
+                cleaned.append(_TITLE_ABBREV[upper] + punct)
+            elif upper in ('HVAC', 'HQ', 'NOC', 'NPS', 'CLC', 'BEQ', 'IDIQ', 'SATOC', 'OSINT', 'LLC'):
+                # Known acronyms to preserve
+                cleaned.append(w.upper() + punct)
+            elif w.lower() in LOWER_WORDS and i > 0:
+                cleaned.append(w.lower() + punct)
+            elif w == w.upper() and len(w) > 1:
+                cleaned.append(w.capitalize() + punct)
+            else:
+                cleaned.append(w + punct)
+
+        title = ' '.join(cleaned)
+        # Capitalize first word always
+        if title:
+            title = title[0].upper() + title[1:]
+
+    # Clean up "Repair/Modification Of" → "Repair/Modification"
+    title = _re.sub(r',?\s*in\s+Repair\b', ', Repair', title, flags=_re.IGNORECASE)
+    title = _re.sub(r'\s+of\s*$', '', title, flags=_re.IGNORECASE)
+
+    return title.strip()
+
+
+def _title_case_desc(s):
+    """Title-case ALL CAPS descriptions (NAICS/PSC come from Census in all caps)."""
+    if not s:
+        return s
+    if s != s.upper():
+        return s  # Already mixed case
+    LOWER = {'of', 'the', 'and', 'for', 'in', 'at', 'by', 'to', 'or', 'a', 'an', 'not', 'nec'}
+    UPPER = {'IT', 'HQ', 'HVAC', 'R&D', 'ADP', 'EDP', 'TV', 'FM', 'AM', 'AC', 'DC'}
+    words = s.split()
+    return ' '.join(
+        w if w in UPPER else (w.lower() if i > 0 and w.lower() in LOWER else w.capitalize())
+        for i, w in enumerate(words)
+    )
+
 # ── Parse SAM.gov opportunity record ─────────────────────────────────────────
 
 def parse_opportunity(raw: dict) -> dict:
@@ -136,9 +314,13 @@ def parse_opportunity(raw: dict) -> dict:
                 return v
         return None
 
-    # Point of contact
+    # Point of contact — clean up data quality issues
     pocs = g('pointOfContact') or []
     primary = next((p for p in pocs if p.get('type','').lower() in ('primary','c')), pocs[0] if pocs else {})
+    primary = _clean_contact(primary)
+    secondary = next((p for p in pocs if p.get('type','').lower() in ('secondary','s','alternative')), None)
+    if secondary:
+        secondary = _clean_contact(secondary)
 
     # Place of performance
     pop = g('placeOfPerformance') or {}
@@ -147,6 +329,56 @@ def parse_opportunity(raw: dict) -> dict:
     if pop_state: pop_state = pop_state[:2].upper()  # VARCHAR(2) — truncate if needed
     pop_city  = (g('placeOfPerformance.city.name') or
                  pop.get('city', {}).get('name') if isinstance(pop, dict) else None)
+    pop_country = (g('placeOfPerformance.country.code') or
+                   g('placeOfPerformance.country.name') or None)
+
+    # officeAddress — contracting office location (use as city/state fallback)
+    office_addr = raw.get('officeAddress') or {}
+    office_state = office_addr.get('state', '').strip() or None
+    office_city = office_addr.get('city', '').strip() or None
+    office_zip = office_addr.get('zipcode', '').strip() or None
+
+    # Military "state" codes: AE=Armed Forces Europe, AP=Armed Forces Pacific, AA=Armed Forces Americas
+    MILITARY_CODES = {'AE': 'Europe', 'AP': 'Pacific', 'AA': 'Americas'}
+
+    # Use place of performance state if it's a valid 2-letter US code, else fall back to office
+    if not pop_state or len(pop_state) > 2 or '-' in (pop_state or ''):
+        pop_state = office_state
+    if not pop_city:
+        # Only fall back to office city if we ALSO don't have a performance state/zip.
+        # Otherwise the office city (e.g. Omaha NE) gets mixed with the performance
+        # state (e.g. Colorado) — producing nonsense like "Omaha, Colorado."
+        if not pop_state:
+            pop_city = office_city
+        else:
+            # We have a state but no city — try to derive city from ZIP via zippopotam.us
+            pop_zip = (g('placeOfPerformance.zip') or '').strip()
+            if pop_zip and len(pop_zip) >= 5:
+                try:
+                    import urllib.request as _ur
+                    _zreq = _ur.Request(f'https://api.zippopotam.us/us/{pop_zip[:5]}',
+                                        headers={'User-Agent': 'Awardopedia/1.0'})
+                    with _ur.urlopen(_zreq, timeout=5) as _zr:
+                        import json as _json
+                        _zdata = _json.loads(_zr.read())
+                        places = _zdata.get('places', [])
+                        if places:
+                            pop_city = places[0].get('place name')
+                except Exception:
+                    pass  # non-fatal — we'll just show state only
+
+    # If state is a military code, replace with the region label and set city to APO/FPO context
+    if pop_state in MILITARY_CODES:
+        region = MILITARY_CODES[pop_state]
+        pop_state = pop_state  # keep the 2-char code for DB consistency
+        # Try to extract country from title (common pattern: "... in Germany", "... in Bulgaria and Romania")
+        title_str = g('title') or ''
+        import re as _re
+        country_match = _re.search(r'\b(?:in|for)\s+([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)*)', title_str)
+        if country_match:
+            pop_city = country_match.group(1)  # e.g. "Bulgaria and Romania"
+        elif not pop_city or pop_city == 'APO':
+            pop_city = f"Armed Forces {region}"
 
     # Estimated value
     award = g('award') or {}
@@ -173,10 +405,10 @@ def parse_opportunity(raw: dict) -> dict:
     return {
         'notice_id':                  notice_id,
         'solicitation_number':        g('solicitationNumber', 'sol_number'),
-        'title':                      g('title'),
+        'title':                      _clean_title(g('title')),
         'description':                g('description', 'fullParentPathName'),
         'naics_code':                 str(g('naicsCode', 'naics') or '').strip() or None,
-        'naics_description':          g('naicsDescription'),
+        'naics_description':          _title_case_desc(g('naicsDescription')),
         'psc_code':                   g('classificationCode', 'pscCode', 'psc'),
         'agency_name':                g('fullParentPathName', 'departmentName', 'agencyName'),
         'sub_agency_name':            g('subtierName', 'subTierOrg'),
@@ -193,6 +425,9 @@ def parse_opportunity(raw: dict) -> dict:
         'estimated_value_max':        float(est_max) if est_max else None,
         'place_of_performance_state': pop_state,
         'place_of_performance_city':  pop_city,
+        'alt_contact_name':           secondary.get('fullName') or secondary.get('name') if secondary else None,
+        'alt_contact_email':          secondary.get('email') if secondary else None,
+        'alt_contact_phone':          secondary.get('phone') if secondary else None,
         'sam_url':                    sam_url,
         'sam_url_alive':              True,
         'sam_url_checked':            datetime.utcnow().isoformat(),
@@ -208,7 +443,14 @@ def upsert_opportunity(fields: dict):
     conn.autocommit = True
     cur = conn.cursor()
 
-    cols = [k for k, v in fields.items() if v is not None]
+    # Get actual column names from DB to avoid inserting into nonexistent columns
+    cur.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'opportunities'
+    """)
+    db_cols = {r[0] for r in cur.fetchall()}
+
+    cols = [k for k, v in fields.items() if v is not None and k in db_cols]
     vals = [fields[c] for c in cols]
     placeholders = ', '.join('%s' for _ in cols)  # psycopg2 uses %s, not $1/$2
     updates = ', '.join(f'{c} = EXCLUDED.{c}' for c in cols if c != 'notice_id')

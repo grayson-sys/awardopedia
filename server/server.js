@@ -79,6 +79,48 @@ app.get('/api/stats', async (req, res) => {
   }
 })
 
+// ─── Feedback ─────────────────────────────────────────────
+app.post('/api/feedback', express.json(), async (req, res) => {
+  const { notice_id, message, email } = req.body
+  if (!message) return res.status(400).json({ error: 'message required' })
+  console.log(`[FEEDBACK] notice=${notice_id || 'general'} email=${email || 'none'} message=${message.slice(0, 200)}`)
+  // Store in a simple log file for now
+  const fs = await import('fs')
+  const line = JSON.stringify({ ts: new Date().toISOString(), notice_id, email, message }) + '\n'
+  fs.appendFileSync('logs/feedback.log', line)
+  res.json({ ok: true })
+})
+
+// ─── Admin endpoints ──────────────────────────────────────
+app.get('/api/admin/quality-runs', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM data_quality_runs ORDER BY run_date DESC LIMIT 20')
+    res.json(rows)
+  } catch { res.json([]) }
+})
+
+app.get('/api/admin/feedback', async (req, res) => {
+  try {
+    const fs = await import('fs')
+    const lines = fs.readFileSync('logs/feedback.log', 'utf-8').trim().split('\n').filter(Boolean)
+    res.json(lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean).reverse())
+  } catch { res.json([]) }
+})
+
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    const q = async (sql) => (await pool.query(sql)).rows[0].n
+    res.json({
+      opportunities: await q('SELECT count(*) as n FROM opportunities'),
+      contracts: await q('SELECT count(*) as n FROM contracts'),
+      intel: await q('SELECT count(*) as n FROM opportunity_intel'),
+      office_codes: await q('SELECT count(*) as n FROM office_codes'),
+      naics: await q('SELECT count(*) as n FROM naics_codes'),
+      psc: await q('SELECT count(*) as n FROM psc_codes'),
+    })
+  } catch (e) { res.json({}) }
+})
+
 // ─── Contracts ────────────────────────────────────────────
 app.get('/api/contracts', async (req, res) => {
   try {
@@ -124,10 +166,25 @@ app.get('/api/contracts/:piid', async (req, res) => {
 app.get('/api/opportunities', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT *,
-        (response_deadline - CURRENT_DATE) AS days_to_deadline
-      FROM opportunities
-      ORDER BY response_deadline ASC NULLS LAST
+      SELECT o.*,
+        (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
+        i.size_standard,
+        i.performance_address,
+        i.contract_structure,
+        i.wage_floor,
+        i.award_basis,
+        i.clearance_required,
+        i.sole_source,
+        i.estimated_value_text AS intel_estimated_value,
+        i.pdf_enriched,
+        i.doc_count,
+        i.congressional_district,
+        i.congress_member_url,
+        p.description AS psc_description
+      FROM opportunities o
+      LEFT JOIN opportunity_intel i USING (notice_id)
+      LEFT JOIN psc_codes p ON o.psc_code = p.code
+      ORDER BY o.response_deadline ASC NULLS LAST
     `)
     res.json({ data: rows, meta: { total: rows.length } })
   } catch (e) {
@@ -138,14 +195,62 @@ app.get('/api/opportunities', async (req, res) => {
 app.get('/api/opportunities/:notice_id', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT *,
-        (response_deadline - CURRENT_DATE) AS days_to_deadline
-      FROM opportunities WHERE notice_id = $1
+      SELECT o.*,
+        (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
+        i.size_standard,
+        i.performance_address,
+        i.contract_structure,
+        i.wage_floor,
+        i.award_basis,
+        i.clearance_required,
+        i.sole_source,
+        i.estimated_value_text AS intel_estimated_value,
+        i.pdf_enriched,
+        i.doc_count,
+        i.congressional_district,
+        i.congress_member_url,
+        p.description AS psc_description
+      FROM opportunities o
+      LEFT JOIN opportunity_intel i USING (notice_id)
+      LEFT JOIN psc_codes p ON o.psc_code = p.code
+      WHERE o.notice_id = $1
     `, [req.params.notice_id])
     if (!rows.length) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
   } catch (e) {
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ─── Attachment proxy — fetches SAM.gov files server-side so users don't need a login ──
+app.get('/api/proxy/attachment', async (req, res) => {
+  const { url } = req.query
+  if (!url || !url.startsWith('https://sam.gov/')) {
+    return res.status(400).json({ error: 'Invalid attachment URL' })
+  }
+  try {
+    const upstream = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Awardopedia/1.0)' },
+      redirect: 'follow',
+    })
+    if (!upstream.ok) {
+      return res.status(502).json({ error: `SAM.gov returned ${upstream.status}` })
+    }
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream'
+    const contentDisposition = upstream.headers.get('content-disposition') || ''
+    res.setHeader('Content-Type', contentType)
+    if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition)
+    // Stream the body directly to the response
+    const reader = upstream.body.getReader()
+    const pump = async () => {
+      const { done, value } = await reader.read()
+      if (done) { res.end(); return }
+      res.write(Buffer.from(value))
+      return pump()
+    }
+    await pump()
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: 'Failed to fetch attachment' })
   }
 })
 
@@ -457,8 +562,16 @@ PLACE OF PERFORMANCE (where work happens):
 }
 
 function parseReportXml(xml) {
-  const sections = ['executive_summary','award_details','competitive_landscape',
-                    'incumbent_analysis','recompete_assessment','recommended_action','attribution']
+  // All possible report section tags (contract + opportunity + standardized)
+  const sections = [
+    'executive_summary','bid_recommendation','scope_of_work',
+    'competitive_landscape','incumbent_analysis','pricing_analysis',
+    'teaming_strategy','risk_assessment','action_plan',
+    // Legacy tags (older reports may use these)
+    'award_details','recompete_assessment','recommended_action',
+    'recompete_intelligence','risk_factors','action_items',
+    'attribution'
+  ]
   const result = {}
   for (const tag of sections) {
     const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
@@ -599,7 +712,7 @@ Estimated Value:   $${Number(o.estimated_value_min||0).toLocaleString()} – $${
 Contract Type:     ${o.contract_type || 'N/A'}
 
 Posted:            ${o.posted_date || 'N/A'}
-Response Deadline: ${o.response_deadline || 'N/A'} (${deadlineNote})
+Response Deadline: ${o.response_deadline || 'N/A'}
 Archive Date:      ${o.archive_date || 'N/A'}
 
 Place of Performance: ${[o.place_of_performance_city, o.place_of_performance_state].filter(Boolean).join(', ') || 'N/A'}
@@ -609,45 +722,45 @@ Incumbent:         ${o.incumbent_name || 'N/A'} (UEI: ${o.incumbent_uei || 'N/A'
 
 SAM.gov URL:       ${o.sam_url || 'N/A'}
 
-Generate a competitive intelligence report using EXACTLY this XML structure.
-Every tag is required. Be specific, factual, and useful to a small business owner deciding whether to bid.
+Generate a comprehensive competitive intelligence report using EXACTLY this XML structure.
+EVERY tag is required — do not skip any. Write LONG, detailed sections. This report is worth $50 to a small business owner deciding whether to invest thousands in proposal preparation.
 
 <executive_summary>
-2-3 sentences. What this is, who wants it, why it matters.
+2 paragraphs. First: what they're buying, who's buying, scope, value, timeline. Second: why it matters, who should care, the bottom line.
 </executive_summary>
 
 <bid_recommendation>
-One of: BID | NO-BID | CONDITIONAL BID
-Then 2-3 sentences explaining the recommendation with specific reasons from the data above.
-If CONDITIONAL, state the exact condition.
+One line: **BID**, **NO-BID**, or **CONDITIONAL BID**
+Then 1-2 paragraphs with 3-5 numbered reasons. Who should bid, who shouldn't, and the financial calculus.
 </bid_recommendation>
 
+<scope_of_work>
+1-2 paragraphs: what the contractor will actually do day-to-day. Major work components, skills needed, key deliverables. Cite specific CLINs or requirements from the solicitation if available.
+</scope_of_work>
+
 <competitive_landscape>
-2-3 sentences on who typically wins contracts like this (based on NAICS, set-aside type, agency).
-How many competitors likely qualify? What's the typical win rate for small businesses on this vehicle?
+1-2 paragraphs: estimated number of competitors, types of firms likely to bid, win probability for a qualified small business. How does the evaluation method (LPTA vs Best Value) shape the dynamics?
 </competitive_landscape>
 
-<recompete_intelligence>
-If this is a recompete (is_recompete=YES): what we can infer about the incumbent's position, likely proposal strength, and whether they're beatable.
-If new requirement: what similar contracts suggest about evaluation priorities.
-2-3 sentences.
-</recompete_intelligence>
+<incumbent_analysis>
+1-2 paragraphs. If recompete: incumbent strengths/weaknesses, are they beatable? If new: what type of firm is this designed for, what differentiators matter most?
+</incumbent_analysis>
+
+<pricing_analysis>
+1 paragraph: estimated value, key cost drivers (wages, bonding, equipment), pricing strategy guidance. Price aggressively or focus on technical merit?
+</pricing_analysis>
 
 <teaming_strategy>
-Specific recommendations: should the bidder prime or sub? What partner profile would strengthen the team?
-Be specific about the type of partner needed (clearance level, NAICS, certification type).
-2-3 sentences.
+1-2 paragraphs: prime or sub? What partner profile strengthens the team? Any mentor-protege or JV angles?
 </teaming_strategy>
 
-<risk_factors>
-Top 2-3 specific risks for this bid: timeline risk, scope clarity, competition intensity, or anything notable in the data above.
-Each risk in one sentence.
-</risk_factors>
+<risk_assessment>
+4-6 risks as a numbered list. Each risk: 1-2 sentences covering the risk and specific mitigation. Use **bold** for risk names.
+</risk_assessment>
 
-<action_items>
-3-5 specific, time-bound actions the bidder should take NOW.
-Format as a numbered list. Be concrete — name the CO, reference the deadline, suggest a specific outreach approach.
-</action_items>
+<action_plan>
+6-10 numbered actions in logical order (not tied to specific dates). Each: what to do, who to contact, what document or resource is needed. Reference the CO by name and the proposal deadline as an absolute date. Do NOT use "immediately," "today," "this week," or any time-relative language. Instead frame as: "before beginning proposal preparation," "after reviewing the solicitation," "prior to the proposal deadline of [date]," etc. The reader may encounter this report at any point in the solicitation timeline.
+</action_plan>
 
 <attribution>
 Data sourced from SAM.gov (official US federal contracting portal). Analysis generated by Claude AI.
@@ -655,17 +768,31 @@ This report is for informational purposes only and does not constitute legal or 
 </attribution>`
 }
 
-const OPP_REPORT_SYSTEM_PROMPT = `You are a federal contracting intelligence analyst.
-You write precise, actionable bid/no-bid assessment reports for small businesses.
+const OPP_REPORT_SYSTEM_PROMPT = `You are a senior federal contracting intelligence analyst writing a bid assessment for a small business owner.
 
-STRICT RULES:
-1. Every XML tag in the template must appear in your response, in order.
-2. Fill each section with specific, factual content derived from the [DATA] provided.
-3. Never invent contract details, dollar amounts, or company names not in the data.
-4. If data is missing (N/A), acknowledge the gap and reason from what is available.
-5. Bid recommendations must be definitive — "CONDITIONAL BID" only with a specific condition stated.
-6. Action items must be specific and time-bound, not generic advice.
-7. Temperature is 0 — be deterministic and consistent.`
+Your audience is a business owner deciding whether to invest in a proposal. Write in clear, direct prose that reads like a well-written book — flowing paragraphs, no bullet points within prose, no bold text, no markdown formatting. Just clean sentences and paragraphs.
+
+STYLE RULES:
+- Write in flowing prose. No bold, no asterisks, no markdown. Just clean text that reads like a professional briefing document.
+- Short paragraphs (2-4 sentences each). White space between paragraphs.
+- For numbered items (risks, action items), use plain "1." numbering — no bold, no special formatting.
+- Total report should be 1,500-2,500 words. Dense with insight, zero filler.
+- Every sentence must earn its place. If it doesn't add actionable intelligence, cut it.
+
+TIME NEUTRALITY — CRITICAL (violating this rule ruins the report):
+- This report will be cached and served to many readers over weeks or months.
+- NEVER use: "today," "right now," "currently," "immediately," "this week," "X days remaining," "the deadline is tight," "act quickly," "time is short," "as of this writing," or ANY time-relative language.
+- NEVER reference specific dates in the action plan as deadlines for the reader (e.g., "by March 25"). The reader may be reading this months after generation.
+- Instead: state the proposal deadline as a fact ("proposals are due April 21, 2026") and frame actions relative to the process ("before beginning proposal preparation," "prior to the proposal deadline," "after reviewing the full solicitation package").
+- The report should read identically whether someone opens it the day it was generated or six months later.
+
+CONTENT RULES:
+1. Every XML tag must appear in your response, in order.
+2. When solicitation documents are provided, cite specific requirements — CLINs, wage rates, evaluation criteria, bonding thresholds.
+3. Never invent details. Analyze and interpret what the data means for a small bidder.
+4. Bid recommendations must be definitive: BID, NO-BID, or CONDITIONAL BID with numbered reasons.
+5. Name the CO, reference deadlines as absolute dates, cite specific documents.
+6. Define every acronym on first use. Write "Naval Facilities Engineering Systems Command (NAVFAC)" not just "NAVFAC." After first use, the acronym alone is fine.`
 
 app.post('/api/reports/generate-opportunity', reportRateLimit, requireApiKey, async (req, res) => {
   const { notice_id } = req.body
@@ -739,6 +866,252 @@ app.post('/api/reports/generate-opportunity', reportRateLimit, requireApiKey, as
   } catch (e) {
     console.error('Opportunity report error:', e)
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// DEV-ONLY: Generate reports via OAuth proxy (no API key needed)
+// Routes through localhost:3456 (claude-max-api-proxy)
+// ═══════════════════════════════════════════════════════════════════
+
+app.post('/api/reports/generate-opportunity-dev', async (req, res) => {
+  if (isProd) return res.status(403).json({ error: 'Dev endpoint not available in production' })
+
+  const { notice_id, force } = req.body
+  if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT o.*, (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
+        i.size_standard, i.performance_address, i.contract_structure,
+        i.wage_floor, i.award_basis, i.clearance_required, i.sole_source,
+        i.estimated_value_text, i.key_requirements, i.pdf_intel, i.work_hours,
+        p.description AS psc_description,
+        oc.full_name AS office_full_name, oc.city AS office_city, oc.state AS office_state
+      FROM opportunities o
+      LEFT JOIN opportunity_intel i USING (notice_id)
+      LEFT JOIN psc_codes p ON o.psc_code = p.code
+      LEFT JOIN office_codes oc ON (
+        SELECT split_part(o.agency_name, '.', array_length(string_to_array(o.agency_name, '.'), 1))
+      ) LIKE '%' || oc.code || '%'
+      WHERE o.notice_id = $1
+    `, [notice_id])
+    if (!rows.length) return res.status(404).json({ error: 'Opportunity not found' })
+    const opp = rows[0]
+
+    // Check cache (skip if force=true)
+    if (!force) {
+      const { rows: cached } = await pool.query(
+        `SELECT sections, generated_at FROM reports
+         WHERE record_type = 'opportunity' AND record_id = $1
+         AND generated_at > NOW() - INTERVAL '90 days'
+         ORDER BY generated_at DESC LIMIT 1`,
+        [notice_id]
+      )
+      if (cached.length && cached[0].sections) {
+        return res.json({ cached: true, found: true, generated_at: cached[0].generated_at, sections: cached[0].sections })
+      }
+    }
+
+    // Load PDF text from disk if available
+    const fs = await import('fs')
+    const path = await import('path')
+    let pdfText = ''
+    const pdfDir = path.join(process.cwd(), 'data', 'pdfs', notice_id)
+    try {
+      if (fs.existsSync(pdfDir)) {
+        const { execSync } = await import('child_process')
+        const files = fs.readdirSync(pdfDir).filter(f => f.endsWith('.pdf')).sort()
+        for (const file of files) {
+          try {
+            const text = execSync(`pdftotext "${path.join(pdfDir, file)}" -`, { timeout: 15000 }).toString()
+            if (text.trim()) {
+              // Strip FAR boilerplate
+              const cleaned = text.split('\n').filter(l => !/\b5[12]\.\d{3}-\d+\b/.test(l)).join('\n')
+              pdfText += `\n\n--- ${file} ---\n${cleaned}`
+            }
+          } catch {}
+        }
+        // Truncate to ~15K words for the report prompt
+        const words = pdfText.split(/\s+/)
+        if (words.length > 15000) {
+          pdfText = words.slice(0, 15000).join(' ') + '\n[... truncated for length ...]'
+        }
+      }
+    } catch {}
+
+    // Build enriched prompt with PDF text
+    const prompt = buildOpportunityPrompt(opp) + (pdfText
+      ? `\n\nFULL SOLICITATION DOCUMENT TEXT (${pdfText.split(/\s+/).length.toLocaleString()} words, boilerplate stripped):\n${pdfText}`
+      : '')
+
+    const proxyUrl = process.env.CLAUDE_PROXY_URL || 'http://localhost:3456'
+    console.log(`[REPORT] Generating for ${notice_id} | prompt ~${Math.round(prompt.length/4)} tokens | PDFs: ${pdfText ? 'yes' : 'no'}`)
+
+    const proxyRes = await fetch(`${proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4',
+        max_tokens: 4000,
+        messages: [
+          { role: 'system', content: OPP_REPORT_SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
+        ]
+      })
+    })
+    const proxyData = await proxyRes.json()
+    const rawXml = proxyData.choices[0].message.content.trim()
+    const sections = parseReportXml(rawXml)
+
+    // Cache (delete old first if force)
+    if (force) {
+      await pool.query(`DELETE FROM reports WHERE record_type = 'opportunity' AND record_id = $1`, [notice_id])
+    }
+    await pool.query(
+      `INSERT INTO reports (record_type, record_id, sections, generated_at, generation_cost, purchase_count)
+       VALUES ('opportunity', $1, $2, NOW(), 0, 1)
+       ON CONFLICT DO NOTHING`,
+      [notice_id, JSON.stringify(sections)]
+    )
+    await pool.query(
+      `UPDATE opportunities SET report_generated = true, report_generated_at = NOW() WHERE notice_id = $1`,
+      [notice_id]
+    )
+
+    // ── Backfill enrichment: mine the report + PDFs for missing structured fields ──
+    // This runs async — don't block the response
+    backfillFromReport(notice_id, sections, pdfText, opp, proxyUrl).catch(e =>
+      console.error(`[BACKFILL] ${notice_id} failed:`, e.message)
+    )
+
+    res.json({ cached: false, found: true, generated_at: new Date().toISOString(), sections })
+  } catch (e) {
+    console.error('Dev report error:', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ── Backfill: extract structured fields from report generation context ────
+async function backfillFromReport(noticeId, reportSections, pdfText, opp, proxyUrl) {
+  // Check what's currently NULL in opportunity_intel
+  const { rows } = await pool.query(
+    `SELECT size_standard, contract_structure, award_basis, wage_floor, work_hours,
+            estimated_value_text, performance_address
+     FROM opportunity_intel WHERE notice_id = $1`,
+    [noticeId]
+  )
+  if (!rows.length) return
+
+  const current = rows[0]
+  const nullFields = Object.entries(current)
+    .filter(([k, v]) => v === null || v === '' || v === 'Not published')
+    .map(([k]) => k)
+
+  if (nullFields.length === 0 || !pdfText) {
+    console.log(`[BACKFILL] ${noticeId.slice(0,16)}: no blanks to fill (or no PDFs)`)
+    return
+  }
+
+  console.log(`[BACKFILL] ${noticeId.slice(0,16)}: filling ${nullFields.length} blanks: ${nullFields.join(', ')}`)
+
+  // Also mine the report itself for clues
+  const reportText = Object.values(reportSections).filter(Boolean).join('\n')
+
+  const fieldDescriptions = {
+    size_standard: 'SBA size standard (e.g. "$22 million" or "1,250 employees")',
+    contract_structure: 'Base year + option years (e.g. "1 base + 4 option years, 5 years total")',
+    award_basis: 'Evaluation method: "Lowest Price Technically Acceptable (LPTA)" or "Best Value"',
+    wage_floor: 'Prevailing wage rate for primary occupation (e.g. "$18.27/hr for Janitor")',
+    work_hours: 'Required work schedule (e.g. "7:00 AM - 4:30 PM Monday-Friday")',
+    estimated_value_text: 'Estimated total contract value in dollars (e.g. "$10,000,000 - $20,000,000")',
+    performance_address: 'Street address where work will be performed',
+  }
+
+  const needed = nullFields
+    .filter(f => fieldDescriptions[f])
+    .map(f => `  - ${f}: ${fieldDescriptions[f]}`)
+    .join('\n')
+
+  if (!needed) return
+
+  const prompt = `You just analyzed a federal solicitation. Based on the documents below, extract ONLY these missing fields.
+
+REPORT YOU GENERATED:
+${reportText.slice(0, 3000)}
+
+SOLICITATION DOCUMENTS (excerpt):
+${pdfText.slice(0, 8000)}
+
+FIELDS NEEDED (return null if genuinely not in the documents):
+${needed}
+
+Return ONLY a JSON object with the field names as keys. No markdown.`
+
+  try {
+    const res = await fetch(`${proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    })
+    const data = await res.json()
+    let raw = data.choices[0].message.content.trim()
+    raw = raw.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '')
+    const extracted = JSON.parse(raw)
+
+    // Write non-null values back to opportunity_intel
+    const updates = []
+    const values = []
+    for (const [field, value] of Object.entries(extracted)) {
+      if (value !== null && value !== '' && fieldDescriptions[field]) {
+        updates.push(`${field} = $${updates.length + 2}`)
+        values.push(value)
+      }
+    }
+
+    if (updates.length > 0) {
+      await pool.query(
+        `UPDATE opportunity_intel SET ${updates.join(', ')}, updated_at = NOW() WHERE notice_id = $1`,
+        [noticeId, ...values]
+      )
+      console.log(`[BACKFILL] ${noticeId.slice(0,16)}: filled ${updates.length} fields: ${updates.map(u => u.split(' ')[0]).join(', ')}`)
+    } else {
+      console.log(`[BACKFILL] ${noticeId.slice(0,16)}: Claude found nothing new`)
+    }
+  } catch (e) {
+    console.error(`[BACKFILL] ${noticeId.slice(0,16)}: extraction failed:`, e.message)
+  }
+}
+
+// Download all PDFs for an opportunity as a ZIP
+app.get('/api/reports/opportunity-pdfs/:notice_id', async (req, res) => {
+  const { notice_id } = req.params
+  const fs = await import('fs')
+  const path = await import('path')
+  const { execSync } = await import('child_process')
+
+  const pdfDir = path.join(process.cwd(), 'data', 'pdfs', notice_id)
+  if (!fs.existsSync(pdfDir)) {
+    return res.status(404).json({ error: 'No PDFs available for this opportunity' })
+  }
+
+  const files = fs.readdirSync(pdfDir).filter(f => f.endsWith('.pdf'))
+  if (!files.length) {
+    return res.status(404).json({ error: 'No PDF files found' })
+  }
+
+  try {
+    const zipPath = `/tmp/awardopedia_${notice_id}.zip`
+    execSync(`cd "${pdfDir}" && zip -j "${zipPath}" *.pdf`, { timeout: 30000 })
+    res.download(zipPath, `solicitation_${notice_id.slice(0, 8)}.zip`, () => {
+      try { fs.unlinkSync(zipPath) } catch {}
+    })
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to create ZIP' })
   }
 })
 
