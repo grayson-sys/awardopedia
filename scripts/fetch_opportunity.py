@@ -356,8 +356,16 @@ def parse_opportunity(raw: dict) -> dict:
     office_city = office_addr.get('city', '').strip() or None
     office_zip = office_addr.get('zipcode', '').strip() or None
 
-    # Military "state" codes: AE=Armed Forces Europe, AP=Armed Forces Pacific, AA=Armed Forces Americas
+    # Non-US "state" codes: military + foreign country codes from SAM.gov
     MILITARY_CODES = {'AE': 'Europe', 'AP': 'Pacific', 'AA': 'Americas'}
+    COUNTRY_CODES = {
+        'PH': 'Philippines', 'DE': 'Germany', 'JP': 'Japan', 'KR': 'South Korea',
+        'IT': 'Italy', 'GB': 'United Kingdom', 'AU': 'Australia', 'MX': 'Mexico',
+        'BG': 'Bulgaria', 'RO': 'Romania', 'KW': 'Kuwait', 'QA': 'Qatar',
+        'BH': 'Bahrain', 'JO': 'Jordan', 'IQ': 'Iraq', 'TR': 'Turkey',
+        'ES': 'Spain', 'BE': 'Belgium', 'NL': 'Netherlands', 'NO': 'Norway',
+        'PL': 'Poland', 'GR': 'Greece',
+    }
 
     # Use place of performance state if it's a valid 2-letter US code, else fall back to office
     if not pop_state or len(pop_state) > 2 or '-' in (pop_state or ''):
@@ -385,18 +393,26 @@ def parse_opportunity(raw: dict) -> dict:
                 except Exception:
                     pass  # non-fatal — we'll just show state only
 
-    # If state is a military code, replace with the region label and set city to APO/FPO context
+    # If state is a military code, set city to the region
     if pop_state in MILITARY_CODES:
         region = MILITARY_CODES[pop_state]
-        pop_state = pop_state  # keep the 2-char code for DB consistency
-        # Try to extract country from title (common pattern: "... in Germany", "... in Bulgaria and Romania")
         title_str = g('title') or ''
         import re as _re
         country_match = _re.search(r'\b(?:in|for)\s+([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)*)', title_str)
         if country_match:
-            pop_city = country_match.group(1)  # e.g. "Bulgaria and Romania"
+            pop_city = country_match.group(1)
         elif not pop_city or pop_city == 'APO':
             pop_city = f"Armed Forces {region}"
+
+    # If state is a foreign country code (PH, DE, JP, etc.), use the country name
+    elif pop_state in COUNTRY_CODES:
+        if not pop_city:
+            # Try to extract city from title
+            title_str = g('title') or ''
+            import re as _re
+            city_match = _re.search(r'\b(?:in|at|near)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', title_str)
+            if city_match:
+                pop_city = city_match.group(1)
 
     # Estimated value
     award = g('award') or {}

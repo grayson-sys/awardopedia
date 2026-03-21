@@ -63,6 +63,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  position: relative;
 }
 .home-hero {
   flex: 1;

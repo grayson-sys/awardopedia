@@ -1116,11 +1116,26 @@ def _extract_office_code(raw: dict, fields: dict) -> Optional[str]:
         if len(parts) >= 3:
             return parts[-1].strip()
 
-    # From agency_name hierarchy: "VA.VA.PCAC (36C776)" → extract code from parens
+    # From agency_name hierarchy
     agency = fields.get('agency_name', '')
+    if not agency:
+        return None
+
+    # Try parenthetical code: "PCAC (36C776)" → "36C776"
     m = re.search(r'\(([A-Z0-9]{4,10})\)', agency)
     if m:
         return m.group(1)
+
+    # Extract from last segment of dot-delimited hierarchy
+    # "DEPT OF DEFENSE.DEPT OF THE AIR FORCE.AIR FORCE GLOBAL STRIKE COMMAND.FA4661  7 CONS CD"
+    # → last segment "FA4661  7 CONS CD" → extract "FA4661"
+    parts = agency.split('.')
+    if len(parts) >= 3:
+        last = parts[-1].strip()
+        # Look for alphanumeric code at start of last segment (must contain digit)
+        m2 = re.match(r'^([A-Z0-9]{3,10})\b', last)
+        if m2 and re.search(r'\d', m2.group(1)):
+            return m2.group(1)
 
     return None
 

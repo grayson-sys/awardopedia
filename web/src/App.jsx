@@ -125,6 +125,11 @@ const US_STATES = {
   GU:'Guam',PR:'Puerto Rico',VI:'U.S. Virgin Islands',AS:'American Samoa',MP:'Northern Mariana Islands',
   // Military
   AE:'Armed Forces Europe',AP:'Armed Forces Pacific',AA:'Armed Forces Americas',
+  // Foreign (SAM.gov uses ISO country codes in place_of_performance_state)
+  PH:'Philippines',DE:'Germany',JP:'Japan',KR:'South Korea',IT:'Italy',
+  GB:'United Kingdom',AU:'Australia',MX:'Mexico',BG:'Bulgaria',RO:'Romania',
+  KW:'Kuwait',QA:'Qatar',BH:'Bahrain',JO:'Jordan',IQ:'Iraq',TR:'Turkey',
+  ES:'Spain',BE:'Belgium',NL:'Netherlands',NO:'Norway',PL:'Poland',GR:'Greece',
 }
 function stateName(code) { return US_STATES[code] || code || '—' }
 
@@ -355,6 +360,7 @@ export default function App() {
             else if (page === 'opportunities') { setActiveTab('opportunities'); setView('results') }
             else if (page === 'api') setView('api')
             else if (page === 'terms') setView('terms')
+            else if (page === 'admin') setView('admin')
             else if (page === 'auth') setView('auth')
             else if (page === 'logout') handleLogout()
           }}
@@ -366,6 +372,15 @@ export default function App() {
           ═══════════════════════════════════════════════════════════════════ */}
       {view === 'home' && (
         <div className="home">
+          {/* Sign in link top-right on home page */}
+          <div style={{ position: 'absolute', top: 16, right: 24 }}>
+            {user ? (
+              <span style={{ fontSize: 13, color: '#6B7280' }}>{user.first_name || user.email?.split('@')[0]}</span>
+            ) : (
+              <a href="#" onClick={e => { e.preventDefault(); setView('auth') }} style={{ fontSize: 13, fontWeight: 600, color: '#1B3A6B' }}>Sign In</a>
+            )}
+          </div>
+
           <div className="home-hero">
             <div className="home-brand">
               <img src="/logo-icon-navy-clean.jpg" alt="Awardopedia" width={48} height={48} style={{ borderRadius: 8 }} />

@@ -22,8 +22,14 @@ const STATE_NAMES = {
   OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',
   SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',
   VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',
-  GU:'Guam',PR:'Puerto Rico',VI:'U.S. Virgin Islands',
+  GU:'Guam',PR:'Puerto Rico',VI:'U.S. Virgin Islands',AS:'American Samoa',MP:'Northern Mariana Islands',
   AE:'Armed Forces Europe',AP:'Armed Forces Pacific',AA:'Armed Forces Americas',
+  // Foreign country codes that appear in SAM.gov place of performance
+  PH:'Philippines',DE:'Germany',JP:'Japan',KR:'South Korea',IT:'Italy',
+  GB:'United Kingdom',AU:'Australia',CA:'Canada',MX:'Mexico',
+  BG:'Bulgaria',RO:'Romania',KW:'Kuwait',QA:'Qatar',BH:'Bahrain',
+  JO:'Jordan',IQ:'Iraq',AF:'Afghanistan',TR:'Turkey',ES:'Spain',
+  BE:'Belgium',NL:'Netherlands',NO:'Norway',PL:'Poland',GR:'Greece',
 }
 
 // Street type abbreviations that should be title-cased

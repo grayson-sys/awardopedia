@@ -18,6 +18,7 @@ export default function Nav({ activePage, user, onHome, onNavigate }) {
         {user ? (
           <>
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>|</span>
+            {user.role === 'admin' && <button onClick={() => onNavigate?.('admin')}>Admin</button>}
             <button style={{ color: '#E9A820' }}>{user.first_name || user.email?.split('@')[0]}</button>
             <button onClick={() => onNavigate?.('logout')} style={{ fontSize: 12, opacity: 0.6 }}>Logout</button>
           </>
