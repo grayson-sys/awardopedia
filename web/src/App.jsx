@@ -6,6 +6,7 @@ import InfoIcon from './components/InfoIcon'
 import Terms from './pages/Terms'
 import ApiKeys from './pages/ApiKeys'
 import Admin from './pages/Admin'
+import Auth from './pages/Auth'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -138,6 +139,32 @@ export default function App() {
   const [opportunities, setOpportunities] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Auth
+  const [user, setUser] = useState(null)
+  const [token, setToken] = useState(() => localStorage.getItem('token'))
+
+  // Restore session on mount
+  useEffect(() => {
+    if (!token) return
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setUser(data))
+      .catch(() => { localStorage.removeItem('token'); setToken(null) })
+  }, [token])
+
+  function handleLogin(member, newToken) {
+    setUser(member)
+    setToken(newToken)
+    setView('home')
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('token')
+    setUser(null)
+    setToken(null)
+    setView('home')
+  }
 
   // Search & filters
   const [query, setQuery] = useState('')
@@ -318,15 +345,18 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="app">
-      {view !== 'home' && (
+      {view !== 'home' && view !== 'auth' && (
         <Nav
           activePage={navPage}
+          user={user}
           onHome={goHome}
           onNavigate={(page) => {
             if (page === 'contracts') { setActiveTab('contracts'); setView('results') }
             else if (page === 'opportunities') { setActiveTab('opportunities'); setView('results') }
             else if (page === 'api') setView('api')
             else if (page === 'terms') setView('terms')
+            else if (page === 'auth') setView('auth')
+            else if (page === 'logout') handleLogout()
           }}
         />
       )}
@@ -596,6 +626,7 @@ export default function App() {
       {view === 'api' && <ApiKeys onBack={(target) => target === 'terms' ? setView('terms') : goHome()} />}
       {view === 'terms' && <Terms onBack={goHome} />}
       {view === 'admin' && <Admin onBack={goHome} />}
+      {view === 'auth' && <Auth onLogin={handleLogin} />}
     </div>
   )
 }

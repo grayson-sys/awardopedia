@@ -265,19 +265,85 @@ app.get('/api/my-reports', authMiddleware, async (req, res) => {
 
 // ─── Self-Improvement System (any authenticated user can propose) ────
 app.post('/api/propose-edit', authMiddleware, express.json(), async (req, res) => {
-  const { notice_id, field_name, old_value, new_value, explanation, proposed_rule } = req.body
+  const { notice_id, field_name, old_value, new_value, explanation, proposed_rule, scope } = req.body
+  // scope = 'record' (just fix this one) or 'pipeline' (write a generalizable rule)
   if (!notice_id || !field_name || !explanation) {
     return res.status(400).json({ error: 'notice_id, field_name, and explanation required' })
   }
+
+  const editScope = scope === 'pipeline' ? 'pipeline' : 'record'
+  let aiRule = null
+
+  // If scope is 'pipeline', ask Opus to draft a deterministic rule
+  if (editScope === 'pipeline' && old_value && new_value) {
+    try {
+      const proxyUrl = process.env.CLAUDE_PROXY_URL || 'http://localhost:3456'
+      const rulePrompt = `A user reported a data quality issue in our federal contracting database pipeline.
+
+Field: ${field_name}
+Bad value: ${JSON.stringify(old_value)}
+Correct value: ${JSON.stringify(new_value)}
+User explanation: ${explanation}
+
+Our pipeline processes SAM.gov opportunity records through these functions:
+- _clean_contact() in fetch_opportunity.py — fixes contact name/phone/email issues
+- _clean_title() in fetch_opportunity.py — fixes opportunity titles
+- _validate_extraction() in pipeline_opportunity.py — validates extracted fields
+- stage_7_enrichment() in pipeline_opportunity.py — canonical lookups and normalization
+
+Write a specific, deterministic Python code snippet (regex or string logic) that would catch and fix this class of error in the pipeline. The fix should:
+1. Be generalizable — work for all records with this pattern, not just this one
+2. Be deterministic — no AI calls needed
+3. Have low false-positive risk
+4. Include a comment explaining what pattern it catches
+
+Return ONLY the Python code snippet, no explanation. If you can't write a safe deterministic rule, say "NEEDS_MANUAL_REVIEW" instead.`
+
+      const proxyRes = await fetch(`${proxyUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: rulePrompt }]
+        })
+      })
+      const data = await proxyRes.json()
+      aiRule = data.choices?.[0]?.message?.content?.trim() || null
+    } catch (e) {
+      console.error('AI rule generation failed:', e.message)
+    }
+  }
+
   try {
     await pool.query(
-      `INSERT INTO pipeline_feedback (notice_id, field_name, old_value, new_value, explanation, proposed_rule, source)
-       VALUES ($1, $2, $3, $4, $5, $6, 'human')`,
+      `INSERT INTO pipeline_feedback (notice_id, field_name, old_value, new_value, explanation, proposed_rule, source, scope, ai_generated_rule)
+       VALUES ($1, $2, $3, $4, $5, $6, 'human', $7, $8)`,
       [notice_id, field_name, old_value, new_value,
        `[${req.user.email}] ${explanation}`,
-       proposed_rule || null]
+       proposed_rule || null, editScope, aiRule]
     )
-    res.json({ ok: true, message: 'Thanks! Your proposal will be reviewed by an admin.' })
+
+    // If scope is 'record', also apply the fix immediately to this one record
+    if (editScope === 'record' && new_value !== undefined) {
+      const allowedFields = [
+        'title', 'contracting_officer', 'contracting_officer_email', 'contracting_officer_phone',
+        'agency_name', 'office_name', 'naics_description', 'set_aside_type', 'notice_type',
+        'place_of_performance_city', 'place_of_performance_state', 'description'
+      ]
+      if (allowedFields.includes(field_name)) {
+        await pool.query(`UPDATE opportunities SET ${field_name} = $1 WHERE notice_id = $2`, [new_value, notice_id])
+      }
+    }
+
+    res.json({
+      ok: true,
+      scope: editScope,
+      ai_rule: aiRule,
+      message: editScope === 'pipeline'
+        ? 'Thanks! Your proposal and an AI-drafted pipeline rule have been submitted for admin review.'
+        : 'Thanks! The record has been updated and your feedback logged.'
+    })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 

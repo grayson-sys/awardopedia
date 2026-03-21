@@ -1,4 +1,4 @@
-export default function Nav({ activePage, onHome, onNavigate }) {
+export default function Nav({ activePage, user, onHome, onNavigate }) {
   return (
     <nav className="nav">
       <button className="nav-logo" onClick={onHome}>
@@ -15,6 +15,15 @@ export default function Nav({ activePage, onHome, onNavigate }) {
           onClick={() => onNavigate?.('opportunities')}
         >Open Opportunities</button>
         <button onClick={() => onNavigate?.('api')}>API</button>
+        {user ? (
+          <>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>|</span>
+            <button style={{ color: '#E9A820' }}>{user.first_name || user.email?.split('@')[0]}</button>
+            <button onClick={() => onNavigate?.('logout')} style={{ fontSize: 12, opacity: 0.6 }}>Logout</button>
+          </>
+        ) : (
+          <button onClick={() => onNavigate?.('auth')} style={{ color: '#E9A820' }}>Sign In</button>
+        )}
       </div>
     </nav>
   )

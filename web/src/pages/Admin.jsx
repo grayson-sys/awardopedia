@@ -120,6 +120,8 @@ export default function Admin({ onBack }) {
                       {rule.source === 'human' ? 'Human' : 'AI'}
                     </span>
                     <span style={{ fontWeight: 600 }}>{rule.field_name}</span>
+                    {rule.scope === 'pipeline' && <span className="badge badge-navy" style={{ fontSize: 10 }}>Pipeline Rule</span>}
+                    {rule.scope === 'record' && <span className="badge badge-muted" style={{ fontSize: 10 }}>Record Fix</span>}
                     <span className={`badge ${rule.status === 'pending' ? 'badge-amber' : rule.status === 'approved' ? 'badge-success' : 'badge-danger'}`}>
                       {rule.status}
                     </span>
@@ -144,6 +146,16 @@ export default function Admin({ onBack }) {
                   <div style={{ fontSize: 12, color: '#1B3A6B', fontStyle: 'italic', marginTop: 4, padding: '6px 8px', background: 'rgba(27,58,107,0.05)', borderRadius: 4 }}>
                     Proposed rule: {rule.proposed_rule}
                   </div>
+                )}
+                {rule.ai_generated_rule && rule.ai_generated_rule !== 'NEEDS_MANUAL_REVIEW' && (
+                  <details style={{ marginTop: 6 }}>
+                    <summary style={{ fontSize: 12, color: '#1B3A6B', cursor: 'pointer', fontWeight: 600 }}>
+                      AI-drafted pipeline code
+                    </summary>
+                    <pre style={{ fontSize: 11, background: '#1A1A2E', color: '#E2E8F0', padding: '10px 12px', borderRadius: 4, marginTop: 4, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                      {rule.ai_generated_rule}
+                    </pre>
+                  </details>
                 )}
 
                 {rule.status === 'pending' && (
