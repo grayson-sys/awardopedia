@@ -347,6 +347,9 @@ def parse_opportunity(raw: dict) -> dict:
     if pop_state: pop_state = pop_state[:2].upper()  # VARCHAR(2) — truncate if needed
     pop_city  = (g('placeOfPerformance.city.name') or
                  pop.get('city', {}).get('name') if isinstance(pop, dict) else None)
+    # Title-case ALL CAPS cities: "ARBOGA" → "Arboga", "GREAT LAKES" → "Great Lakes"
+    if pop_city and pop_city == pop_city.upper() and len(pop_city) > 2:
+        pop_city = pop_city.title()
     pop_country = (g('placeOfPerformance.country.code') or
                    g('placeOfPerformance.country.name') or None)
 
@@ -354,6 +357,8 @@ def parse_opportunity(raw: dict) -> dict:
     office_addr = raw.get('officeAddress') or {}
     office_state = office_addr.get('state', '').strip() or None
     office_city = office_addr.get('city', '').strip() or None
+    if office_city and office_city == office_city.upper() and len(office_city) > 2:
+        office_city = office_city.title()
     office_zip = office_addr.get('zipcode', '').strip() or None
 
     # Non-US "state" codes: military + foreign country codes from SAM.gov
