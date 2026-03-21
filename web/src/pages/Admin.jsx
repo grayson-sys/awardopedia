@@ -3,16 +3,31 @@ import { useState, useEffect } from 'react'
 export default function Admin({ onBack }) {
   const [qualityRuns, setQualityRuns] = useState([])
   const [feedback, setFeedback] = useState([])
+  const [pipelineRules, setPipelineRules] = useState([])
   const [stats, setStats] = useState(null)
 
-  useEffect(() => {
+  function loadData() {
     fetch('/api/admin/quality-runs').then(r => r.json()).then(setQualityRuns).catch(() => {})
     fetch('/api/admin/feedback').then(r => r.json()).then(setFeedback).catch(() => {})
+    fetch('/api/admin/pipeline-feedback').then(r => r.json()).then(setPipelineRules).catch(() => {})
     fetch('/api/admin/stats').then(r => r.json()).then(setStats).catch(() => {})
-  }, [])
+  }
+
+  useEffect(loadData, [])
+
+  async function handleRuleAction(id, status) {
+    await fetch('/api/admin/approve-rule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status })
+    })
+    loadData()
+  }
 
   const latestScore = qualityRuns[0]?.score
   const scoreColor = latestScore >= 90 ? '#059669' : latestScore >= 80 ? '#E9A820' : '#dc3545'
+  const pendingRules = pipelineRules.filter(r => r.status === 'pending')
+  const approvedRules = pipelineRules.filter(r => r.status === 'approved')
 
   return (
     <div className="container" style={{ padding: '24px' }}>
@@ -75,6 +90,74 @@ export default function Admin({ onBack }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Proposed Pipeline Rules — needs human approval */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="section-title">
+          Proposed Pipeline Rules
+          {pendingRules.length > 0 && <span className="badge badge-amber" style={{ marginLeft: 8 }}>{pendingRules.length} pending</span>}
+        </div>
+        <p className="text-muted text-sm" style={{ marginBottom: 12 }}>
+          Rules proposed by humans (via record editing) and AI (via QA checks). Nothing goes into the pipeline without your approval.
+        </p>
+
+        {pipelineRules.length === 0 ? (
+          <p className="text-muted text-sm">No proposed rules yet. Edit a record or run the QA script to generate proposals.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pipelineRules.map(rule => (
+              <div key={rule.id} style={{
+                padding: '12px 14px', borderRadius: 6, fontSize: 13,
+                background: rule.status === 'pending' ? '#FFFBEB' : rule.status === 'approved' ? '#F0FDF4' : '#FEF2F2',
+                border: `1px solid ${rule.status === 'pending' ? '#FDE68A' : rule.status === 'approved' ? '#BBF7D0' : '#FECACA'}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className={`badge ${rule.source === 'human' ? 'badge-navy' : 'badge-amber'}`}>
+                      {rule.source === 'human' ? 'Human' : 'AI'}
+                    </span>
+                    <span style={{ fontWeight: 600 }}>{rule.field_name}</span>
+                    <span className={`badge ${rule.status === 'pending' ? 'badge-amber' : rule.status === 'approved' ? 'badge-success' : 'badge-danger'}`}>
+                      {rule.status}
+                    </span>
+                  </div>
+                  <span className="text-muted" style={{ fontSize: 11 }}>
+                    {new Date(rule.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+
+                {rule.old_value && (
+                  <div style={{ fontSize: 12, color: '#991B1B', marginBottom: 4 }}>
+                    Was: {rule.old_value.slice(0, 80)}
+                  </div>
+                )}
+                {rule.new_value && (
+                  <div style={{ fontSize: 12, color: '#065F46', marginBottom: 4 }}>
+                    Now: {rule.new_value.slice(0, 80)}
+                  </div>
+                )}
+                <div style={{ marginBottom: 4 }}>{rule.explanation}</div>
+                {rule.proposed_rule && (
+                  <div style={{ fontSize: 12, color: '#1B3A6B', fontStyle: 'italic', marginTop: 4, padding: '6px 8px', background: 'rgba(27,58,107,0.05)', borderRadius: 4 }}>
+                    Proposed rule: {rule.proposed_rule}
+                  </div>
+                )}
+
+                {rule.status === 'pending' && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button className="btn btn-navy btn-sm" onClick={() => handleRuleAction(rule.id, 'approved')}>
+                      Approve
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleRuleAction(rule.id, 'rejected')}>
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

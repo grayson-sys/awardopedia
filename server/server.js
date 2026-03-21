@@ -92,6 +92,245 @@ app.post('/api/feedback', express.json(), async (req, res) => {
 })
 
 // ─── Admin endpoints ──────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// AUTH + MEMBERSHIP
+// ═══════════════════════════════════════════════════════════════════
+
+const JWT_SECRET = envVars.JWT_SECRET || process.env.JWT_SECRET || 'dev-secret-change-in-prod'
+const CREDITS_PER_REPORT = 1
+const REPORT_PRICE_CENTS = 500  // $5 per report
+const MIN_CREDIT_BUY = 4        // $20 minimum = 4 credits
+
+function hashPassword(pw) { return createHash('sha256').update(pw + JWT_SECRET).digest('hex') }
+
+function createToken(member) {
+  const payload = { id: member.id, email: member.email, role: member.role }
+  // Simple JWT: base64(header).base64(payload).signature
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+  const body = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 30 * 86400000 })).toString('base64url')
+  const sig = createHash('sha256').update(`${header}.${body}.${JWT_SECRET}`).digest('base64url')
+  return `${header}.${body}.${sig}`
+}
+
+function verifyToken(token) {
+  if (!token) return null
+  try {
+    const [header, body, sig] = token.split('.')
+    const expected = createHash('sha256').update(`${header}.${body}.${JWT_SECRET}`).digest('base64url')
+    if (sig !== expected) return null
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString())
+    if (payload.exp < Date.now()) return null
+    return payload
+  } catch { return null }
+}
+
+function authMiddleware(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
+  const user = verifyToken(token)
+  if (!user) return res.status(401).json({ error: 'Login required' })
+  req.user = user
+  next()
+}
+
+function optionalAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
+  req.user = verifyToken(token)
+  next()
+}
+
+// ─── Register ─────────────────────────────────────────────
+app.post('/api/auth/register', express.json(), async (req, res) => {
+  const { email, password, first_name, last_name, profession, company_name, company_size, company_state, company_naics } = req.body
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+  try {
+    const hash = hashPassword(password)
+    const { rows } = await pool.query(
+      `INSERT INTO members (email, password_hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, email, role, credits, first_name`,
+      [email.toLowerCase().trim(), hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics]
+    )
+    const member = rows[0]
+    const token = createToken(member)
+    res.json({ token, member: { id: member.id, email: member.email, first_name: member.first_name, credits: member.credits, role: member.role } })
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Email already registered' })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Login ────────────────────────────────────────────────
+app.post('/api/auth/login', express.json(), async (req, res) => {
+  const { email, password } = req.body
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
+
+  try {
+    const hash = hashPassword(password)
+    const { rows } = await pool.query(
+      'SELECT id, email, role, credits, first_name, last_name FROM members WHERE email = $1 AND password_hash = $2 AND is_active = true',
+      [email.toLowerCase().trim(), hash]
+    )
+    if (!rows.length) return res.status(401).json({ error: 'Invalid email or password' })
+    const member = rows[0]
+    await pool.query('UPDATE members SET last_login = NOW() WHERE id = $1', [member.id])
+    const token = createToken(member)
+    res.json({ token, member: { id: member.id, email: member.email, first_name: member.first_name, credits: member.credits, role: member.role } })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Get current user ─────────────────────────────────────
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email, first_name, last_name, profession, company_name, company_size, company_state, company_naics, credits, role, alerts_enabled, alert_naics, alert_states, alert_set_asides, alert_keywords FROM members WHERE id = $1',
+      [req.user.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'User not found' })
+    res.json(rows[0])
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Update profile / alert preferences ───────────────────
+app.put('/api/auth/profile', authMiddleware, express.json(), async (req, res) => {
+  const allowed = ['first_name', 'last_name', 'profession', 'company_name', 'company_size', 'company_state', 'company_naics',
+                    'alert_naics', 'alert_states', 'alert_set_asides', 'alert_keywords', 'alert_min_value', 'alert_max_value', 'alerts_enabled']
+  const updates = []
+  const values = []
+  let idx = 1
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) {
+      updates.push(`${key} = $${idx}`)
+      values.push(typeof req.body[key] === 'object' ? JSON.stringify(req.body[key]) : req.body[key])
+      idx++
+    }
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No fields to update' })
+  values.push(req.user.id)
+  try {
+    await pool.query(`UPDATE members SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`, values)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Watchlist ────────────────────────────────────────────
+app.get('/api/watchlist', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT w.*, o.title, o.agency_name, o.response_deadline, o.set_aside_type, o.naics_code, o.naics_description
+       FROM watchlist w JOIN opportunities o ON w.notice_id = o.notice_id
+       WHERE w.member_id = $1 ORDER BY w.added_at DESC`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.json([]) }
+})
+
+app.post('/api/watchlist', authMiddleware, express.json(), async (req, res) => {
+  const { notice_id, notes } = req.body
+  if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+  try {
+    await pool.query(
+      'INSERT INTO watchlist (member_id, notice_id, notes) VALUES ($1, $2, $3) ON CONFLICT (member_id, notice_id) DO UPDATE SET notes = EXCLUDED.notes',
+      [req.user.id, notice_id, notes || null]
+    )
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/watchlist/:notice_id', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM watchlist WHERE member_id = $1 AND notice_id = $2', [req.user.id, req.params.notice_id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── My reports (purchased) ───────────────────────────────
+app.get('/api/my-reports', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT rp.*, r.sections, r.generated_at, o.title, o.agency_name, o.solicitation_number
+       FROM report_purchases rp
+       JOIN reports r ON rp.report_id = r.id
+       JOIN opportunities o ON rp.notice_id = o.notice_id
+       WHERE rp.member_id = $1 ORDER BY rp.purchased_at DESC`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.json([]) }
+})
+
+// ─── Self-Improvement System (any authenticated user can propose) ────
+app.post('/api/propose-edit', authMiddleware, express.json(), async (req, res) => {
+  const { notice_id, field_name, old_value, new_value, explanation, proposed_rule } = req.body
+  if (!notice_id || !field_name || !explanation) {
+    return res.status(400).json({ error: 'notice_id, field_name, and explanation required' })
+  }
+  try {
+    await pool.query(
+      `INSERT INTO pipeline_feedback (notice_id, field_name, old_value, new_value, explanation, proposed_rule, source)
+       VALUES ($1, $2, $3, $4, $5, $6, 'human')`,
+      [notice_id, field_name, old_value, new_value,
+       `[${req.user.email}] ${explanation}`,
+       proposed_rule || null]
+    )
+    res.json({ ok: true, message: 'Thanks! Your proposal will be reviewed by an admin.' })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Admin: Edit a field + submit pipeline feedback ───────
+app.post('/api/admin/edit-field', express.json(), async (req, res) => {
+  const { notice_id, field_name, old_value, new_value, explanation, proposed_rule } = req.body
+  if (!notice_id || !field_name) return res.status(400).json({ error: 'notice_id and field_name required' })
+
+  try {
+    // Update the actual record
+    const allowedFields = [
+      'title', 'contracting_officer', 'contracting_officer_email', 'contracting_officer_phone',
+      'agency_name', 'office_name', 'naics_description', 'set_aside_type', 'notice_type',
+      'place_of_performance_city', 'place_of_performance_state', 'description'
+    ]
+    if (allowedFields.includes(field_name) && new_value !== undefined) {
+      await pool.query(`UPDATE opportunities SET ${field_name} = $1 WHERE notice_id = $2`, [new_value, notice_id])
+    }
+
+    // Log the feedback for pipeline improvement
+    if (explanation) {
+      await pool.query(
+        `INSERT INTO pipeline_feedback (notice_id, field_name, old_value, new_value, explanation, proposed_rule, source)
+         VALUES ($1, $2, $3, $4, $5, $6, 'human')`,
+        [notice_id, field_name, old_value, new_value, explanation, proposed_rule || null]
+      )
+    }
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Admin: Pipeline feedback management ──────────────────
+app.get('/api/admin/pipeline-feedback', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM pipeline_feedback ORDER BY created_at DESC LIMIT 50')
+    res.json(rows)
+  } catch { res.json([]) }
+})
+
+app.post('/api/admin/approve-rule', express.json(), async (req, res) => {
+  const { id, status } = req.body // status = 'approved' or 'rejected'
+  if (!id || !['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'id and status required' })
+  try {
+    await pool.query(
+      `UPDATE pipeline_feedback SET status = $1, approved_by = 'admin', approved_at = NOW() WHERE id = $2`,
+      [status, id]
+    )
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 app.get('/api/admin/quality-runs', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM data_quality_runs ORDER BY run_date DESC LIMIT 20')

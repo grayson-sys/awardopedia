@@ -1093,7 +1093,7 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
     cur = conn.cursor()
     if enrichment.get('naics_description'):
         cur.execute(
-            "UPDATE opportunities SET naics_description = %s WHERE notice_id = %s AND (naics_description IS NULL OR naics_description = '')",
+            "UPDATE opportunities SET naics_description = %s WHERE notice_id = %s",
             [enrichment['naics_description'], notice_id]
         )
     if enrichment.get('office_name'):
