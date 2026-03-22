@@ -1,9 +1,9 @@
 {
-  "pages_done": 1,
-  "records_inserted": 3,
-  "records_updated": 0,
-  "errors": 0,
-  "last_piid": "80JSC025F7071",
-  "last_page": 1,
-  "timestamp": "2026-03-18T12:12:23.625830"
+  "pages_done": 41,
+  "records_inserted": 27,
+  "records_updated": 3966,
+  "errors": 10,
+  "last_piid": "70CTD022FR0000005",
+  "last_page": 40,
+  "timestamp": "2026-03-22T10:03:01.057371"
 }
