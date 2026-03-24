@@ -7,6 +7,7 @@ import Terms from './pages/Terms'
 import ApiKeys from './pages/ApiKeys'
 import Admin from './pages/Admin'
 import Auth from './pages/Auth'
+import Credits from './pages/Credits'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -97,13 +98,27 @@ function Pagination({ total, page, pageSize, onChange }) {
   if (totalPages <= 1) return null
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
+
+  // Generate page options for dropdown
+  const pageOptions = []
+  for (let i = 1; i <= totalPages; i++) pageOptions.push(i)
+
   return (
     <div className="pagination">
       <span className="text-muted text-sm">Showing {start}–{end} of {total}</span>
       <div className="pagination-btns">
-        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>Previous</button>
-        <span className="text-sm" style={{ padding: '0 8px' }}>Page {page} of {totalPages}</span>
+        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onChange(1)} title="First page">&laquo;</button>
+        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>Prev</button>
+        <select
+          value={page}
+          onChange={e => onChange(Number(e.target.value))}
+          style={{ padding: '4px 8px', fontSize: 13, border: '1px solid #E2E4E9', borderRadius: 4, margin: '0 4px' }}
+        >
+          {pageOptions.map(p => <option key={p} value={p}>Page {p}</option>)}
+        </select>
+        <span className="text-sm text-muted" style={{ padding: '0 4px' }}>of {totalPages}</span>
         <button className="btn btn-ghost btn-sm" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Next</button>
+        <button className="btn btn-ghost btn-sm" disabled={page >= totalPages} onClick={() => onChange(totalPages)} title="Last page">&raquo;</button>
       </div>
     </div>
   )
@@ -215,7 +230,15 @@ export default function App() {
           if (match) { setSelectedOpp(match); setView('opp-detail') }
         } else if (contractId) {
           const match = contractList.find(c => c.piid === contractId)
-          if (match) { setSelectedContract(match); setView('contract-detail') }
+          if (match) {
+            setSelectedContract(match)
+            setView('contract-detail')
+            // Fetch full details (includes successor, company profile, etc.)
+            fetch(`/api/contracts/${contractId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(full => { if (full) setSelectedContract(full) })
+              .catch(() => {})
+          }
         }
       } catch (e) {
         setError(e.message)
@@ -316,10 +339,22 @@ export default function App() {
     setView('results')
   }
 
-  function openContract(c) {
+  async function openContract(c) {
+    // Set initial data from list, then fetch full details with company profile
     setSelectedContract(c)
     setView('contract-detail')
     window.history.replaceState(null, '', `?contract=${c.piid}`)
+
+    // Fetch full contract details (includes recipient enrichment)
+    try {
+      const res = await fetch(`/api/contracts/${c.piid}`)
+      if (res.ok) {
+        const full = await res.json()
+        setSelectedContract(full)
+      }
+    } catch (e) {
+      console.error('Error fetching contract details:', e)
+    }
   }
 
   function openOpp(o) {
@@ -361,6 +396,7 @@ export default function App() {
             else if (page === 'api') setView('api')
             else if (page === 'terms') setView('terms')
             else if (page === 'admin') setView('admin')
+            else if (page === 'credits') setView('credits')
             else if (page === 'auth') setView('auth')
             else if (page === 'logout') handleLogout()
           }}
@@ -627,12 +663,18 @@ export default function App() {
       {view === 'contract-detail' && selectedContract && (
         <ContractDetail
           contract={selectedContract}
+          user={user}
+          token={token}
+          onBuyCredits={() => setView('credits')}
           onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}
       {view === 'opp-detail' && selectedOpp && (
         <OpportunityDetail
           opp={selectedOpp}
+          user={user}
+          token={token}
+          onBuyCredits={() => setView('credits')}
           onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}
@@ -641,6 +683,7 @@ export default function App() {
       {view === 'api' && <ApiKeys onBack={(target) => target === 'terms' ? setView('terms') : goHome()} />}
       {view === 'terms' && <Terms onBack={goHome} />}
       {view === 'admin' && <Admin onBack={goHome} />}
+      {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
       {view === 'auth' && <Auth onLogin={handleLogin} />}
     </div>
   )

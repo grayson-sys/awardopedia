@@ -126,3 +126,22 @@ Started: 2025-03-17
 - Build result: N/A (docs + scripts only, no web changes)
 - Learnings: Methodology doc captures the full scaling playbook — from 10 calls/day to 1,000/day with Role. Key insight: cursor-based pagination (oldest signedDate / latest responseDeadLine) is how we spider beyond the first 100 records.
 ---
+
+## 2026-03-23 — Phase 8 - Report generation + Stripe + PDF/CSV + caching
+- What was implemented:
+  - **Stripe integration**: `stripe` npm package, Stripe Checkout session creation (`POST /api/credits/purchase`), webhook handler (`POST /api/stripe/webhook` with raw body parsing before express.json), credit pack configuration (Starter $9/100, Pro $29/500, Power $79/2000)
+  - **Credit system**: `GET /api/credits` (balance check), `GET /api/credits/packs` (available packs), `GET /api/credits/history` (purchase history), credit deduction on report generation
+  - **Member report endpoints**: `POST /api/member/reports/generate` and `POST /api/member/reports/generate-opportunity` — JWT auth, credit check (402 if insufficient), credit deduction, report caching (cached reports free), purchase recording in report_purchases table
+  - **CSV export**: `GET /api/reports/csv/:type/:id` — generates CSV download with section name + content columns
+  - **Credits page**: `web/src/pages/Credits.jsx` — shows credit balance, 3 pack cards with pricing, Stripe checkout redirect, purchase history table
+  - **UI updates**: Nav shows credit balance for logged-in users, ContractDetail and OpportunityDetail pass auth tokens to report generation, "Buy Credits" button when credits exhausted, CSV download button alongside Print/PDF
+  - **Migration**: 015_credit_purchases.sql already existed with correct schema
+- Files changed: server/server.js, server/package.json, web/src/App.jsx, web/src/pages/Credits.jsx (new), web/src/components/ContractDetail.jsx, web/src/components/OpportunityDetail.jsx, web/src/components/Nav.jsx, prd.json
+- Build result: PASS (frontend build + server syntax check)
+- **Learnings for future iterations:**
+  - Stripe webhook MUST be registered before express.json() middleware — Stripe needs raw body for signature verification
+  - Cached reports are served free (no credit deduction) — only fresh generation costs a credit
+  - The existing report generation endpoints (requireApiKey) remain for API v1 consumers; member endpoints use JWT auth + credits
+  - credit_purchases migration (015) was already written — check migrations/ before creating new ones
+  - STOP: Running the 015 migration on production DB requires FIREFLY. Stripe is wired for test mode only — switching to live keys requires FIREFLY.
+---

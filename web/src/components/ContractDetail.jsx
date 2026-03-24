@@ -1,5 +1,20 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, FileText, Loader } from 'lucide-react'
+import { ArrowLeft, FileText, Loader, Bell, BellRing, Download } from 'lucide-react'
+import InfoIcon from './InfoIcon'
+
+// Detect FAR competition exceptions and return appropriate tooltip field
+function getFarExceptionField(competitionType) {
+  if (!competitionType) return null
+  const upper = competitionType.toUpperCase()
+  if (upper.includes('6.302-1') || upper.includes('ONLY ONE')) return 'FAR6302-1'
+  if (upper.includes('6.302-2') || upper.includes('URGENCY')) return 'FAR6302-2'
+  if (upper.includes('6.302-3') || upper.includes('INDUSTRIAL')) return 'FAR6302-3'
+  if (upper.includes('6.302-4') || upper.includes('INTERNATIONAL')) return 'FAR6302-4'
+  if (upper.includes('6.302-5') || upper.includes('STATUTE')) return 'FAR6302-5'
+  if (upper.includes('6.302-6') || upper.includes('SECURITY')) return 'FAR6302-6'
+  if (upper.includes('6.302-7') || upper.includes('PUBLIC INTEREST')) return 'FAR6302-7'
+  return null
+}
 
 function fmt(n) {
   if (!n) return '—'
@@ -12,12 +27,27 @@ function daysLeft(dateStr) {
   return diff
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+  })
+}
+
+function formatTimeAgo(days) {
+  const absDays = Math.abs(days)
+  if (absDays < 30) return `${absDays}d`
+  if (absDays < 365) return `${Math.round(absDays / 30)}mo`
+  const years = (absDays / 365).toFixed(1)
+  return years.endsWith('.0') ? `${Math.round(absDays / 365)}y` : `${years}y`
+}
+
 function ExpiryLabel({ days }) {
   if (days === null) return <span>—</span>
-  if (days < 0) return <span className="expiry-danger">Expired {Math.abs(days)}d ago</span>
-  if (days <= 30) return <span className="expiry-danger">{days} days</span>
-  if (days <= 90) return <span className="expiry-warn">{days} days</span>
-  return <span>{days} days</span>
+  if (days < 0) return <span className="expiry-danger">Expired {formatTimeAgo(days)} ago</span>
+  if (days <= 30) return <span className="expiry-danger">{formatTimeAgo(days)} left</span>
+  if (days <= 90) return <span className="expiry-warn">{formatTimeAgo(days)} left</span>
+  return <span>{formatTimeAgo(days)} left</span>
 }
 
 const SECTION_LABELS = {
@@ -80,11 +110,13 @@ function ReportView({ sections, generatedAt }) {
   )
 }
 
-export default function ContractDetail({ contract, onBack }) {
+export default function ContractDetail({ contract, onBack, user, token, onBuyCredits }) {
   const days = daysLeft(contract.end_date)
   const [report, setReport] = useState(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState(null)
+  const [watching, setWatching] = useState(false)
+  const [watchLoading, setWatchLoading] = useState(false)
 
   // Auto-load cached report on mount
   useEffect(() => {
@@ -96,15 +128,23 @@ export default function ContractDetail({ contract, onBack }) {
   }, [contract.piid])
 
   async function generateReport() {
+    if (!token) {
+      setReportError('Please sign in to generate reports.')
+      return
+    }
     setReportLoading(true)
     setReportError(null)
     try {
-      const res = await fetch('/api/reports/generate', {
+      const res = await fetch('/api/member/reports/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ piid: contract.piid })
       })
       const data = await res.json()
+      if (res.status === 402) {
+        setReportError('No credits remaining.')
+        return
+      }
       if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
       setReport(data)
     } catch (e) {
@@ -116,6 +156,24 @@ export default function ContractDetail({ contract, onBack }) {
 
   function openPrint() {
     window.open(`/api/reports/print/${contract.piid}`, '_blank')
+  }
+
+  async function toggleWatch() {
+    setWatchLoading(true)
+    try {
+      const res = await fetch('/api/watch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piid: contract.piid, action: watching ? 'unwatch' : 'watch' })
+      })
+      if (res.ok) {
+        setWatching(!watching)
+      }
+    } catch (e) {
+      console.error('Watch error:', e)
+    } finally {
+      setWatchLoading(false)
+    }
   }
 
   return (
@@ -166,10 +224,6 @@ export default function ContractDetail({ contract, onBack }) {
                 <div className="field">
                   <span className="field-label">Sub-Agency</span>
                   <span className="field-value">{contract.sub_agency_name || '—'}</span>
-                </div>
-                <div className="field">
-                  <span className="field-label">PIID</span>
-                  <span className="field-value mono">{contract.piid}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">Contract Type</span>
@@ -243,11 +297,11 @@ export default function ContractDetail({ contract, onBack }) {
               <div className="field-grid">
                 <div className="field">
                   <span className="field-label">Start Date</span>
-                  <span className="field-value">{contract.start_date || '—'}</span>
+                  <span className="field-value">{formatDate(contract.start_date)}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">End Date</span>
-                  <span className="field-value">{contract.end_date || '—'}</span>
+                  <span className="field-value">{formatDate(contract.end_date)}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">Days Remaining</span>
@@ -257,11 +311,11 @@ export default function ContractDetail({ contract, onBack }) {
                 </div>
                 <div className="field">
                   <span className="field-label">Date Signed</span>
-                  <span className="field-value">{contract.date_signed || '—'}</span>
+                  <span className="field-value">{formatDate(contract.date_signed)}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">Last Modified</span>
-                  <span className="field-value">{contract.last_modified_date || '—'}</span>
+                  <span className="field-value">{formatDate(contract.last_modified_date)}</span>
                 </div>
                 <div className="field">
                   <span className="field-label">Fiscal Year</span>
@@ -279,7 +333,7 @@ export default function ContractDetail({ contract, onBack }) {
                   <span className="field-value">{contract.set_aside_type || '—'}</span>
                 </div>
                 <div className="field">
-                  <span className="field-label">Competition Type</span>
+                  <span className="field-label">Competition Type {getFarExceptionField(contract.competition_type) && <InfoIcon field={getFarExceptionField(contract.competition_type)} />}</span>
                   <span className="field-value">{contract.competition_type || '—'}</span>
                 </div>
                 <div className="field">
@@ -334,7 +388,7 @@ export default function ContractDetail({ contract, onBack }) {
                   <span className="field-value fw-600">{contract.recipient_name || '—'}</span>
                 </div>
                 <div className="field">
-                  <span className="field-label">UEI</span>
+                  <span className="field-label">UEI <InfoIcon field="UEI" /></span>
                   <span className="field-value mono">{contract.recipient_uei || '—'}</span>
                 </div>
                 <div className="field">
@@ -362,7 +416,15 @@ export default function ContractDetail({ contract, onBack }) {
                 {contract.recipient_congressional_district && (
                   <div className="field">
                     <span className="field-label">Congressional District</span>
-                    <span className="field-value">{contract.recipient_state}-{contract.recipient_congressional_district}</span>
+                    <span className="field-value">
+                      {contract.recipient_congress_url ? (
+                        <a href={contract.recipient_congress_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-navy)' }}>
+                          {contract.recipient_state}-{contract.recipient_congressional_district} — Contact your representative ↗
+                        </a>
+                      ) : (
+                        `${contract.recipient_state}-${contract.recipient_congressional_district}`
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
@@ -388,6 +450,83 @@ export default function ContractDetail({ contract, onBack }) {
               )}
             </div>
 
+            {/* Company Profile — only show if we have enriched data */}
+            {(contract.is_public_company || contract.company_brief || contract.recipient_hq_city) && (
+              <div className="card">
+                <div className="section-title">Company Profile</div>
+                <div className="field-grid">
+                  {contract.recipient_hq_city && (
+                    <div className="field">
+                      <span className="field-label">Headquarters</span>
+                      <span className="field-value">
+                        {[contract.recipient_hq_address, contract.recipient_hq_city, contract.recipient_hq_state, contract.recipient_hq_zip].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {contract.recipient_website && (
+                    <div className="field">
+                      <span className="field-label">Website</span>
+                      <span className="field-value">
+                        <a href={contract.recipient_website.startsWith('http') ? contract.recipient_website : `https://${contract.recipient_website}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-navy)' }}>
+                          {contract.recipient_website.replace(/^https?:\/\//, '')} ↗
+                        </a>
+                      </span>
+                    </div>
+                  )}
+                  {contract.is_public_company && (
+                    <>
+                      <div className="field">
+                        <span className="field-label">Stock Ticker</span>
+                        <span className="field-value mono">
+                          <a href={`https://finance.yahoo.com/quote/${contract.stock_ticker}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-navy)' }}>
+                            {contract.stock_ticker} ↗
+                          </a>
+                        </span>
+                      </div>
+                      {contract.market_cap && (
+                        <div className="field">
+                          <span className="field-label">Market Cap</span>
+                          <span className="field-value mono">${(contract.market_cap / 1e9).toFixed(1)}B</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {contract.employee_count && (
+                    <div className="field">
+                      <span className="field-label">Employees</span>
+                      <span className="field-value">{contract.employee_count.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {contract.parent_name && (
+                    <div className="field">
+                      <span className="field-label">Parent Company</span>
+                      <span className="field-value">{contract.parent_name}</span>
+                    </div>
+                  )}
+                </div>
+                {contract.company_brief && (
+                  <p style={{ fontSize: 13, marginTop: 12, lineHeight: 1.6 }}>{contract.company_brief}</p>
+                )}
+                {contract.executive_compensation && (
+                  <div style={{ marginTop: 16 }}>
+                    <span className="field-label">Executive Leadership</span>
+                    <div style={{ marginTop: 8 }}>
+                      {(typeof contract.executive_compensation === 'string'
+                        ? JSON.parse(contract.executive_compensation)
+                        : contract.executive_compensation
+                      ).slice(0, 5).map((exec, i) => (
+                        <div key={i} style={{ fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 500 }}>{exec.name}</span>
+                          {exec.title && <span style={{ color: 'var(--color-muted)' }}> — {exec.title}</span>}
+                          {exec.total_pay && <span style={{ color: 'var(--color-muted)' }}> · ${(exec.total_pay / 1e6).toFixed(1)}M</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Place of Performance */}
             {contract.pop_city && (
               <div className="card">
@@ -409,9 +548,64 @@ export default function ContractDetail({ contract, onBack }) {
                   {contract.pop_congressional_district && (
                     <div className="field">
                       <span className="field-label">Congressional District</span>
-                      <span className="field-value">{contract.pop_state}-{contract.pop_congressional_district}</span>
+                      <span className="field-value">
+                        {contract.pop_congress_url ? (
+                          <a href={contract.pop_congress_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-navy)' }}>
+                            {contract.pop_state}-{contract.pop_congressional_district} — Contact your representative ↗
+                          </a>
+                        ) : (
+                          `${contract.pop_state}-${contract.pop_congressional_district}`
+                        )}
+                      </span>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Successor Contract — what replaced this when it ended */}
+            {contract.successor_piid && (
+              <div className="card" style={{ borderLeft: `3px solid ${contract.incumbent_retained ? 'var(--color-success)' : 'var(--color-danger)'}` }}>
+                <div className="section-title">
+                  {contract.incumbent_retained ? '✓ Contract Renewed' : '✗ Recompete Lost'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12, fontStyle: 'italic' }}>
+                  {contract.incumbent_retained
+                    ? 'The incumbent won the follow-on contract — continuity of service.'
+                    : 'A different contractor won the recompete — potential disruption or improvement.'}
+                </p>
+                <div className="field-grid">
+                  <div className="field">
+                    <span className="field-label">Successor Contract</span>
+                    <span className="field-value mono">
+                      <a href={`https://www.usaspending.gov/search/?keywords=${contract.successor_piid}`}
+                         target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-navy)' }}>
+                        {contract.successor_piid} ↗
+                      </a>
+                    </span>
+                  </div>
+                  <div className="field">
+                    <span className="field-label">New Awardee</span>
+                    <span className="field-value fw-600">{contract.successor_recipient || '—'}</span>
+                  </div>
+                  <div className="field">
+                    <span className="field-label">Successor Value</span>
+                    <span className="field-value mono">{fmt(contract.successor_amount)}</span>
+                  </div>
+                  {contract.successor_start_date && (
+                    <div className="field">
+                      <span className="field-label">Successor Start</span>
+                      <span className="field-value">{formatDate(contract.successor_start_date)}</span>
+                    </div>
+                  )}
+                  <div className="field">
+                    <span className="field-label">Match Confidence</span>
+                    <span className="field-value">
+                      {contract.successor_confidence >= 0.8 ? 'High' :
+                       contract.successor_confidence >= 0.5 ? 'Medium' : 'Low'}
+                      {' '}({Math.round(contract.successor_confidence * 100)}%)
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -458,11 +652,17 @@ export default function ContractDetail({ contract, onBack }) {
                     Competitive landscape · Incumbent analysis · Recompete assessment · Bid recommendation
                   </p>
                   <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 12 }}>
-                    Powered by Claude · 1 credit ($0.33)
+                    Powered by Claude · 1 credit
+                    {user && <span> · Balance: {user.credits ?? '?'}</span>}
                   </div>
                   {reportError && (
                     <div style={{ fontSize: 12, color: 'var(--color-danger)', marginBottom: 8 }}>
-                      Error: {reportError}
+                      {reportError}
+                      {reportError.includes('No credits') && onBuyCredits && (
+                        <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={onBuyCredits}>
+                          Buy Credits
+                        </button>
+                      )}
                     </div>
                   )}
                   <button
@@ -492,14 +692,48 @@ export default function ContractDetail({ contract, onBack }) {
                   </div>
                   <button
                     className="btn btn-navy"
-                    style={{ width: '100%', justifyContent: 'center' }}
+                    style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
                     onClick={openPrint}
                   >
                     <FileText size={14} /> Print / Save PDF
                   </button>
+                  <a
+                    href={`/api/reports/csv/contract/${contract.piid}`}
+                    className="btn btn-outline"
+                    style={{ width: '100%', justifyContent: 'center', textDecoration: 'none' }}
+                    download
+                  >
+                    <Download size={14} /> Download CSV
+                  </a>
                 </div>
               )}
             </div>
+
+            {/* Watch for Recompete */}
+            {days !== null && (
+              <div className="card mt-16">
+                <div className="section-title">Track This Contract</div>
+                <p style={{ fontSize: 13, marginBottom: 12 }}>
+                  {days > 0
+                    ? `This contract expires in ${formatTimeAgo(days)}. Get notified when a recompete is posted.`
+                    : `This contract has ended. Watch for the successor award.`}
+                </p>
+                <button
+                  className={`btn ${watching ? 'btn-success' : 'btn-outline'}`}
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={toggleWatch}
+                  disabled={watchLoading}
+                >
+                  {watching ? <BellRing size={14} /> : <Bell size={14} />}
+                  {watching ? ' Watching — Click to Stop' : ' Watch for Recompete'}
+                </button>
+                {watching && (
+                  <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 8 }}>
+                    We'll email you when a recompete solicitation is posted on SAM.gov.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

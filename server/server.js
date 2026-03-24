@@ -5,6 +5,7 @@ import express from 'express'
 import pg from 'pg'
 import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
+import Stripe from 'stripe'
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -36,6 +37,16 @@ const PORT = envVars.PORT || process.env.PORT || 3001
 
 const anthropic = new Anthropic({ apiKey: envVars.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY })
 
+const STRIPE_SECRET_KEY = envVars.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY
+const STRIPE_WEBHOOK_SECRET = envVars.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null
+
+const CREDIT_PACKS = {
+  starter: { priceId: 'price_1TBNL847350RugxrNcVcMsAT', credits: 100, label: 'Starter — 100 credits', cents: 900 },
+  pro:     { priceId: 'price_1TBNL947350RugxrkUlb8rUY', credits: 500, label: 'Pro — 500 credits', cents: 2900 },
+  power:   { priceId: 'price_1TBNL947350Rugxr4ilhHzTv', credits: 2000, label: 'Power — 2,000 credits', cents: 7900 },
+}
+
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -47,6 +58,46 @@ const app = express()
 app.disable('x-powered-by')
 app.use(securityHeaders)
 app.use(cors())
+
+// Stripe webhook needs raw body — must be before express.json()
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' })
+
+  let event
+  try {
+    if (STRIPE_WEBHOOK_SECRET) {
+      event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET)
+    } else {
+      event = JSON.parse(req.body.toString())
+    }
+  } catch (e) {
+    console.error('Stripe webhook signature failed:', e.message)
+    return res.status(400).json({ error: 'Webhook signature verification failed' })
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object
+    const memberId = session.metadata?.member_id
+    const creditsToAdd = parseInt(session.metadata?.credits, 10)
+
+    if (memberId && creditsToAdd) {
+      try {
+        await pool.query('UPDATE members SET credits = credits + $1 WHERE id = $2', [creditsToAdd, memberId])
+        await pool.query(
+          `INSERT INTO credit_purchases (member_id, stripe_session_id, credits, amount_cents, pack_name)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [memberId, session.id, creditsToAdd, session.amount_total, session.metadata?.pack_name || 'unknown']
+        )
+        console.log(`[STRIPE] Credited ${creditsToAdd} to member ${memberId} (session ${session.id})`)
+      } catch (e) {
+        console.error('[STRIPE] Failed to credit member:', e.message)
+      }
+    }
+  }
+
+  res.json({ received: true })
+})
+
 app.use(express.json())
 
 // ─── Honeypot routes — never linked, only bots hit these ─
@@ -248,6 +299,39 @@ app.delete('/api/watchlist/:notice_id', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── Watch contracts for recompete ───────────────────────────────
+app.post('/api/watch', authMiddleware, express.json(), async (req, res) => {
+  const { piid, action, notes } = req.body
+  if (!piid) return res.status(400).json({ error: 'piid required' })
+  try {
+    if (action === 'unwatch') {
+      await pool.query('DELETE FROM watched_contracts WHERE user_id = $1 AND piid = $2', [req.user.id, piid])
+    } else {
+      await pool.query(
+        `INSERT INTO watched_contracts (user_id, piid, notes) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, piid) DO UPDATE SET notes = EXCLUDED.notes`,
+        [req.user.id, piid, notes || null]
+      )
+    }
+    res.json({ ok: true, watching: action !== 'unwatch' })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.get('/api/watched-contracts', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT w.*, c.recipient_name, c.agency_name, c.award_amount, c.end_date,
+              (c.end_date - CURRENT_DATE) AS days_until_expiry
+       FROM watched_contracts w
+       JOIN contracts c ON w.piid = c.piid
+       WHERE w.user_id = $1
+       ORDER BY c.end_date ASC`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.json([]) }
+})
+
 // ─── My reports (purchased) ───────────────────────────────
 app.get('/api/my-reports', authMiddleware, async (req, res) => {
   try {
@@ -257,6 +341,63 @@ app.get('/api/my-reports', authMiddleware, async (req, res) => {
        JOIN reports r ON rp.report_id = r.id
        JOIN opportunities o ON rp.notice_id = o.notice_id
        WHERE rp.member_id = $1 ORDER BY rp.purchased_at DESC`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.json([]) }
+})
+
+// ─── Credits: check balance ──────────────────────────────
+app.get('/api/credits', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT credits FROM members WHERE id = $1', [req.user.id])
+    if (!rows.length) return res.status(404).json({ error: 'User not found' })
+    res.json({ credits: rows[0].credits })
+  } catch (e) { res.status(500).json({ error: isProd ? 'Internal server error' : e.message }) }
+})
+
+// ─── Credits: get available packs ────────────────────────
+app.get('/api/credits/packs', (req, res) => {
+  const packs = Object.entries(CREDIT_PACKS).map(([key, p]) => ({
+    key, label: p.label, credits: p.credits, price: `$${(p.cents / 100).toFixed(0)}`
+  }))
+  res.json(packs)
+})
+
+// ─── Credits: purchase via Stripe Checkout ───────────────
+app.post('/api/credits/purchase', authMiddleware, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' })
+
+  const { pack } = req.body
+  const packInfo = CREDIT_PACKS[pack]
+  if (!packInfo) return res.status(400).json({ error: 'Invalid pack. Choose: starter, pro, or power' })
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [{ price: packInfo.priceId, quantity: 1 }],
+      metadata: {
+        member_id: String(req.user.id),
+        credits: String(packInfo.credits),
+        pack_name: pack,
+      },
+      success_url: `${req.headers.origin || 'https://awardopedia.com'}/?credits=success&pack=${pack}`,
+      cancel_url: `${req.headers.origin || 'https://awardopedia.com'}/?credits=cancelled`,
+    })
+    res.json({ url: session.url })
+  } catch (e) {
+    console.error('[STRIPE] Checkout error:', e.message)
+    res.status(500).json({ error: isProd ? 'Payment setup failed' : e.message })
+  }
+})
+
+// ─── Credits: purchase history ───────────────────────────
+app.get('/api/credits/history', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT credits, amount_cents, pack_name, created_at
+       FROM credit_purchases WHERE member_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [req.user.id]
     )
     res.json(rows)
@@ -456,9 +597,26 @@ app.get('/api/contracts', async (req, res) => {
 app.get('/api/contracts/:piid', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT *,
-        (end_date - CURRENT_DATE) AS days_to_expiry
-      FROM contracts WHERE piid = $1
+      SELECT c.*,
+        (c.end_date - CURRENT_DATE) AS days_to_expiry,
+        r.hq_address AS recipient_hq_address,
+        r.hq_city AS recipient_hq_city,
+        r.hq_state AS recipient_hq_state,
+        r.hq_zip AS recipient_hq_zip,
+        r.website AS recipient_website,
+        r.phone AS recipient_phone,
+        r.is_public_company,
+        r.stock_ticker,
+        r.market_cap,
+        r.employee_count,
+        r.executives,
+        r.executive_compensation,
+        r.company_brief,
+        r.parent_uei,
+        r.parent_name
+      FROM contracts c
+      LEFT JOIN recipients r ON c.recipient_uei = r.uei
+      WHERE c.piid = $1
     `, [req.params.piid])
     if (!rows.length) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
@@ -1175,6 +1333,192 @@ app.post('/api/reports/generate-opportunity', reportRateLimit, requireApiKey, as
 })
 
 // ═══════════════════════════════════════════════════════════════════
+// MEMBER REPORT GENERATION — uses credits instead of API key
+// ═══════════════════════════════════════════════════════════════════
+
+// Contract report — member auth + credit deduction
+app.post('/api/member/reports/generate', authMiddleware, async (req, res) => {
+  const { piid } = req.body
+  if (!piid) return res.status(400).json({ error: 'piid required' })
+
+  try {
+    // Check for cached report first (free — no credit deduction)
+    const { rows: cached } = await pool.query(
+      `SELECT sections, generated_at FROM reports
+       WHERE record_type = 'contract' AND record_id = $1
+       AND generated_at > NOW() - INTERVAL '90 days'
+       ORDER BY generated_at DESC LIMIT 1`,
+      [piid]
+    )
+    if (cached.length && cached[0].sections) {
+      return res.json({ cached: true, generated_at: cached[0].generated_at, sections: cached[0].sections })
+    }
+
+    // Check credits
+    const { rows: memberRows } = await pool.query('SELECT credits FROM members WHERE id = $1', [req.user.id])
+    if (!memberRows.length) return res.status(404).json({ error: 'User not found' })
+    if (memberRows[0].credits < CREDITS_PER_REPORT) {
+      return res.status(402).json({ error: 'Insufficient credits', credits: memberRows[0].credits, required: CREDITS_PER_REPORT })
+    }
+
+    // Fetch contract
+    const { rows } = await pool.query(
+      'SELECT *, (end_date - CURRENT_DATE) AS days_to_expiry FROM contracts WHERE piid = $1',
+      [piid]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Contract not found' })
+
+    // Deduct credit
+    await pool.query('UPDATE members SET credits = credits - $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id])
+
+    // Generate with Claude
+    const prompt = buildContractPrompt(rows[0])
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 2500,
+      temperature: 0,
+      system: REPORT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }]
+    })
+
+    const rawXml = message.content[0].text
+    const sections = parseReportXml(rawXml)
+
+    // Cache in DB
+    await pool.query(
+      `INSERT INTO reports (record_type, record_id, sections, generated_at, generation_cost, purchase_count)
+       VALUES ('contract', $1, $2, NOW(), 0.02, 1) ON CONFLICT DO NOTHING`,
+      [piid, JSON.stringify(sections)]
+    )
+    await pool.query('UPDATE contracts SET report_generated = true, report_generated_at = NOW() WHERE piid = $1', [piid])
+
+    // Record purchase
+    const { rows: rptRows } = await pool.query(
+      `SELECT id FROM reports WHERE record_type = 'contract' AND record_id = $1 ORDER BY generated_at DESC LIMIT 1`, [piid]
+    )
+    if (rptRows.length) {
+      await pool.query(
+        `INSERT INTO report_purchases (member_id, report_id, notice_id, credits_used) VALUES ($1, $2, $3, $4)`,
+        [req.user.id, rptRows[0].id, piid, CREDITS_PER_REPORT]
+      )
+    }
+
+    res.json({ cached: false, generated_at: new Date().toISOString(), sections })
+  } catch (e) {
+    console.error('Member report error:', e)
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// Opportunity report — member auth + credit deduction
+app.post('/api/member/reports/generate-opportunity', authMiddleware, async (req, res) => {
+  const { notice_id } = req.body
+  if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+
+  try {
+    // Check cache first (free)
+    const { rows: cached } = await pool.query(
+      `SELECT sections, generated_at FROM reports
+       WHERE record_type = 'opportunity' AND record_id = $1
+       AND generated_at > NOW() - INTERVAL '90 days'
+       ORDER BY generated_at DESC LIMIT 1`,
+      [notice_id]
+    )
+    if (cached.length && cached[0].sections) {
+      return res.json({ cached: true, generated_at: cached[0].generated_at, sections: cached[0].sections })
+    }
+
+    // Check credits
+    const { rows: memberRows } = await pool.query('SELECT credits FROM members WHERE id = $1', [req.user.id])
+    if (!memberRows.length) return res.status(404).json({ error: 'User not found' })
+    if (memberRows[0].credits < CREDITS_PER_REPORT) {
+      return res.status(402).json({ error: 'Insufficient credits', credits: memberRows[0].credits, required: CREDITS_PER_REPORT })
+    }
+
+    // Fetch opportunity
+    const { rows } = await pool.query(`
+      SELECT o.*, (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
+        i.size_standard, i.performance_address, i.contract_structure,
+        i.wage_floor, i.award_basis, i.clearance_required, i.sole_source,
+        i.estimated_value_text, i.key_requirements, i.pdf_intel, i.work_hours,
+        p.description AS psc_description
+      FROM opportunities o
+      LEFT JOIN opportunity_intel i USING (notice_id)
+      LEFT JOIN psc_codes p ON o.psc_code = p.code
+      WHERE o.notice_id = $1
+    `, [notice_id])
+    if (!rows.length) return res.status(404).json({ error: 'Opportunity not found' })
+
+    // Deduct credit
+    await pool.query('UPDATE members SET credits = credits - $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id])
+
+    // Generate with Claude
+    const prompt = buildOpportunityPrompt(rows[0])
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 4000,
+      temperature: 0,
+      system: OPP_REPORT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }]
+    })
+
+    const rawXml = message.content[0].text
+    const sections = parseReportXml(rawXml)
+
+    await pool.query(
+      `INSERT INTO reports (record_type, record_id, sections, generated_at, generation_cost, purchase_count)
+       VALUES ('opportunity', $1, $2, NOW(), 0.02, 1) ON CONFLICT DO NOTHING`,
+      [notice_id, JSON.stringify(sections)]
+    )
+    await pool.query('UPDATE opportunities SET report_generated = true, report_generated_at = NOW() WHERE notice_id = $1', [notice_id])
+
+    const { rows: rptRows } = await pool.query(
+      `SELECT id FROM reports WHERE record_type = 'opportunity' AND record_id = $1 ORDER BY generated_at DESC LIMIT 1`, [notice_id]
+    )
+    if (rptRows.length) {
+      await pool.query(
+        `INSERT INTO report_purchases (member_id, report_id, notice_id, credits_used) VALUES ($1, $2, $3, $4)`,
+        [req.user.id, rptRows[0].id, notice_id, CREDITS_PER_REPORT]
+      )
+    }
+
+    res.json({ cached: false, generated_at: new Date().toISOString(), sections })
+  } catch (e) {
+    console.error('Member opp report error:', e)
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ─── CSV export for reports ──────────────────────────────
+app.get('/api/reports/csv/:type/:id', async (req, res) => {
+  const { type, id } = req.params
+  if (!['contract', 'opportunity'].includes(type)) return res.status(400).json({ error: 'Invalid type' })
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT sections, generated_at FROM reports
+       WHERE record_type = $1 AND record_id = $2
+       ORDER BY generated_at DESC LIMIT 1`,
+      [type, id]
+    )
+    if (!rows.length || !rows[0].sections) return res.status(404).json({ error: 'Report not found' })
+
+    const s = rows[0].sections
+    const csvRows = [['Section', 'Content']]
+    for (const [key, val] of Object.entries(s)) {
+      if (val) csvRows.push([key.replace(/_/g, ' '), val.replace(/"/g, '""')])
+    }
+
+    const csv = csvRows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="report-${id}.csv"`)
+    res.send(csv)
+  } catch (e) {
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════
 // DEV-ONLY: Generate reports via OAuth proxy (no API key needed)
 // Routes through localhost:3456 (claude-max-api-proxy)
 // ═══════════════════════════════════════════════════════════════════
@@ -1742,6 +2086,201 @@ app.post('/api/v1/register', registerRateLimit, async (req, res) => {
     res.json({ api_key: plainKey, message: 'Key generated successfully. Store it securely — it cannot be recovered.' })
   } catch (e) {
     console.error('Registration error:', e)
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// MEMBER REPORT GENERATION — auth + credit deduction
+// ═══════════════════════════════════════════════════════════════════
+
+// Shared credit check + deduct helper
+async function checkAndDeductCredit(userId, res) {
+  const { rows } = await pool.query('SELECT credits FROM members WHERE id = $1', [userId])
+  if (!rows.length) { res.status(404).json({ error: 'User not found' }); return false }
+  if (rows[0].credits < CREDITS_PER_REPORT) {
+    res.status(402).json({ error: 'Insufficient credits', credits: rows[0].credits, needed: CREDITS_PER_REPORT })
+    return false
+  }
+  await pool.query('UPDATE members SET credits = credits - $1 WHERE id = $2', [CREDITS_PER_REPORT, userId])
+  return true
+}
+
+// Shared: check for cached report (free if already generated)
+async function getCachedReport(type, id) {
+  const { rows } = await pool.query(
+    `SELECT id, sections, generated_at FROM reports
+     WHERE record_type = $1 AND record_id = $2
+     AND generated_at > NOW() - INTERVAL '90 days'
+     ORDER BY generated_at DESC LIMIT 1`,
+    [type, id]
+  )
+  return (rows.length && rows[0].sections) ? rows[0] : null
+}
+
+app.post('/api/member/reports/generate', authMiddleware, async (req, res) => {
+  const { piid } = req.body
+  if (!piid) return res.status(400).json({ error: 'piid required' })
+
+  try {
+    // Check cache first (free)
+    const cached = await getCachedReport('contract', piid)
+    if (cached) {
+      return res.json({ cached: true, generated_at: cached.generated_at, sections: cached.sections })
+    }
+
+    // Check and deduct credit
+    if (!(await checkAndDeductCredit(req.user.id, res))) return
+
+    const { rows } = await pool.query(
+      'SELECT *, (end_date - CURRENT_DATE) AS days_to_expiry FROM contracts WHERE piid = $1', [piid]
+    )
+    if (!rows.length) {
+      await pool.query('UPDATE members SET credits = credits + $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id])
+      return res.status(404).json({ error: 'Contract not found' })
+    }
+
+    const prompt = buildContractPrompt(rows[0])
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5', max_tokens: 2500, temperature: 0,
+      system: REPORT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }]
+    })
+    const sections = parseReportXml(message.content[0].text)
+
+    await pool.query(
+      `INSERT INTO reports (record_type, record_id, sections, generated_at, generation_cost, purchase_count)
+       VALUES ('contract', $1, $2, NOW(), 0.02, 1) ON CONFLICT DO NOTHING`,
+      [piid, JSON.stringify(sections)]
+    )
+
+    const { rows: updated } = await pool.query('SELECT credits FROM members WHERE id = $1', [req.user.id])
+    res.json({ cached: false, generated_at: new Date().toISOString(), sections, credits_remaining: updated[0]?.credits })
+  } catch (e) {
+    console.error('[MEMBER REPORT CONTRACT]', e)
+    try { await pool.query('UPDATE members SET credits = credits + $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id]) } catch {}
+    res.status(500).json({ error: isProd ? 'Report generation failed' : e.message })
+  }
+})
+
+app.post('/api/member/reports/generate-opportunity', authMiddleware, async (req, res) => {
+  const { notice_id, force } = req.body
+  if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+
+  try {
+    // Check cache first (free, skip if force)
+    if (!force) {
+      const cached = await getCachedReport('opportunity', notice_id)
+      if (cached) {
+        return res.json({ cached: true, found: true, generated_at: cached.generated_at, sections: cached.sections })
+      }
+    }
+
+    // Check and deduct credit
+    if (!(await checkAndDeductCredit(req.user.id, res))) return
+
+    const { rows } = await pool.query(`
+      SELECT o.*, (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
+        i.size_standard, i.performance_address, i.contract_structure,
+        i.wage_floor, i.award_basis, i.clearance_required, i.sole_source,
+        i.estimated_value_text, i.key_requirements, i.pdf_intel, i.work_hours
+      FROM opportunities o
+      LEFT JOIN opportunity_intel i USING (notice_id)
+      WHERE o.notice_id = $1
+    `, [notice_id])
+    if (!rows.length) {
+      await pool.query('UPDATE members SET credits = credits + $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id])
+      return res.status(404).json({ error: 'Opportunity not found' })
+    }
+
+    // Load PDF text if available
+    const fs = await import('fs')
+    const path = await import('path')
+    let pdfText = ''
+    const pdfDir = path.join(process.cwd(), 'data', 'pdfs', notice_id)
+    try {
+      if (fs.existsSync(pdfDir)) {
+        const { execSync } = await import('child_process')
+        const files = fs.readdirSync(pdfDir).filter(f => f.endsWith('.pdf')).sort()
+        for (const file of files) {
+          try {
+            const text = execSync(`pdftotext "${path.join(pdfDir, file)}" -`, { timeout: 15000 }).toString()
+            if (text.trim()) pdfText += `\n\n--- ${file} ---\n${text}`
+          } catch {}
+        }
+        const words = pdfText.split(/\s+/)
+        if (words.length > 15000) pdfText = words.slice(0, 15000).join(' ') + '\n[... truncated ...]'
+      }
+    } catch {}
+
+    const prompt = buildOpportunityPrompt(rows[0]) + (pdfText
+      ? `\n\nFULL SOLICITATION DOCUMENT TEXT:\n${pdfText}` : '')
+
+    const proxyUrl = process.env.CLAUDE_PROXY_URL || 'http://localhost:3456'
+    const proxyRes = await fetch(`${proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4', max_tokens: 4000,
+        messages: [
+          { role: 'system', content: OPP_REPORT_SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
+        ]
+      })
+    })
+    const proxyData = await proxyRes.json()
+    const sections = parseReportXml(proxyData.choices[0].message.content.trim())
+
+    // Cache (delete old if force)
+    if (force) {
+      await pool.query(`DELETE FROM reports WHERE record_type = 'opportunity' AND record_id = $1`, [notice_id])
+    }
+    await pool.query(
+      `INSERT INTO reports (record_type, record_id, sections, generated_at, generation_cost, purchase_count)
+       VALUES ('opportunity', $1, $2, NOW(), 0.02, 1) ON CONFLICT DO NOTHING`,
+      [notice_id, JSON.stringify(sections)]
+    )
+
+    const { rows: updated } = await pool.query('SELECT credits FROM members WHERE id = $1', [req.user.id])
+    res.json({ cached: false, generated_at: new Date().toISOString(), sections, credits_remaining: updated[0]?.credits })
+  } catch (e) {
+    console.error('[MEMBER REPORT OPP]', e)
+    try { await pool.query('UPDATE members SET credits = credits + $1 WHERE id = $2', [CREDITS_PER_REPORT, req.user.id]) } catch {}
+    res.status(500).json({ error: isProd ? 'Report generation failed' : e.message })
+  }
+})
+
+// ─── CSV export for reports ──────────────────────────────
+app.get('/api/reports/csv/:type/:id', async (req, res) => {
+  const { type, id } = req.params
+  if (!['contract', 'opportunity'].includes(type)) return res.status(400).json({ error: 'Invalid type' })
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT sections, generated_at FROM reports
+       WHERE record_type = $1 AND record_id = $2
+       AND generated_at > NOW() - INTERVAL '90 days'
+       ORDER BY generated_at DESC LIMIT 1`,
+      [type, id]
+    )
+    if (!rows.length || !rows[0].sections) return res.status(404).json({ error: 'Report not found' })
+
+    const sections = typeof rows[0].sections === 'string' ? JSON.parse(rows[0].sections) : rows[0].sections
+    const genDate = new Date(rows[0].generated_at).toISOString().split('T')[0]
+
+    // Build CSV
+    const escapeCsv = (s) => s ? `"${String(s).replace(/"/g, '""')}"` : '""'
+    const lines = ['Section,Content']
+    for (const [key, value] of Object.entries(sections)) {
+      if (value) lines.push(`${escapeCsv(key)},${escapeCsv(value)}`)
+    }
+    lines.push(`Generated,${escapeCsv(genDate)}`)
+    lines.push(`Source,"Awardopedia.com — data from USASpending.gov and SAM.gov"`)
+
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="awardopedia-report-${id}.csv"`)
+    res.send(lines.join('\n'))
+  } catch (e) {
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
 })

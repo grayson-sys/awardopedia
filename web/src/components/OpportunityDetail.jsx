@@ -82,7 +82,7 @@ function RenderProse({ text }) {
 
 // ── Report modal — full-page overlay with cover page + spinning ─────────────
 
-function ReportModal({ opp, onClose }) {
+function ReportModal({ opp, onClose, token }) {
   const [status, setStatus] = useState('ready') // ready | generating | done | error
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
@@ -100,9 +100,12 @@ function ReportModal({ opp, onClose }) {
     setElapsed(0)
     setError(null)
     try {
-      const res = await fetch('/api/reports/generate-opportunity-dev', {
+      const endpoint = token ? '/api/member/reports/generate-opportunity' : '/api/reports/generate-opportunity-dev'
+      const headers = { 'Content-Type': 'application/json' }
+      if (token) headers.Authorization = `Bearer ${token}`
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ notice_id: opp.notice_id, force })
       })
       const data = await res.json()
@@ -229,7 +232,10 @@ function ReportModal({ opp, onClose }) {
                 <span style={{ fontWeight: 700, color: '#1B3A6B' }}>Awardopedia</span>
                 <span style={{ color: '#9CA3AF', fontSize: 12 }}>Intelligence Report</span>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a href={`/api/reports/csv/opportunity/${opp.notice_id}`} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }} download>CSV</a>
+                <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print</button>
+              </div>
             </div>
 
             {/* Title block */}
@@ -429,7 +435,7 @@ function DocTile({ att, index }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export default function OpportunityDetail({ opp, onBack }) {
+export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredits }) {
   const days = daysUntil(opp.response_deadline)
   const { agency, office: subAgency } = parseAgencyHierarchy(opp.agency_name)
   const [showReport, setShowReport] = useState(false)
@@ -438,7 +444,7 @@ export default function OpportunityDetail({ opp, onBack }) {
 
   return (
     <div>
-      {showReport && <ReportModal opp={opp} onClose={() => setShowReport(false)} />}
+      {showReport && <ReportModal opp={opp} token={token} onClose={() => setShowReport(false)} />}
 
       <div className="detail-header">
         <div className="container">
