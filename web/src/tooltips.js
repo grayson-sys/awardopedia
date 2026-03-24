@@ -51,6 +51,16 @@ const tooltips = {
   ExtentCompeted:     "A more detailed description of how competition was structured — e.g. whether it was a full open competition, limited to small businesses, or not competed at all.",
   NumberOfOffers:     "How many vendors submitted bids or proposals. 1 = effectively sole source. Higher numbers indicate real competition.",
   LegalBasis:         "The legal authority cited to justify limiting competition (if applicable). References specific sections of the Federal Acquisition Regulation (FAR).",
+
+  // ── FAR Competition Exceptions ────────────────────────────────────────────
+  'FAR6302':          "Federal Acquisition Regulation exceptions that allow agencies to skip competitive bidding. Each exception requires justification and approval.",
+  'FAR6302-1':        "Only One Source — no other supplier can provide the item or service. Used for unique patents, proprietary technology, or exclusive capabilities.",
+  'FAR6302-2':        "Urgency — an unusual and compelling emergency won't allow time for competitive bidding. Common during disasters, pandemics, military operations, or critical system failures.",
+  'FAR6302-3':        "Industrial Mobilization — needed to keep essential suppliers in business for national defense.",
+  'FAR6302-4':        "International Agreement — required by treaty or agreement with another country.",
+  'FAR6302-5':        "Authorized by Statute — Congress specifically allowed this sole-source award.",
+  'FAR6302-6':        "National Security — disclosure of the agency's needs would compromise security.",
+  'FAR6302-7':        "Public Interest — the head of the agency determines competition is not in the public interest.",
   SolicitationProcedures: "The method used to solicit offers — e.g. sealed bidding (lowest price wins) vs. negotiated acquisition (best value).",
   CommercialItem:     "Whether the goods or services are commercially available — i.e. sold to the general public, not custom-built for the government. Commercial items have streamlined acquisition rules.",
   SubcontractingPlan: "For large contracts, prime contractors must submit a plan showing what portion of work they'll award to small businesses as subcontractors.",
@@ -65,6 +75,11 @@ const tooltips = {
   SmallBusiness:      "Confirms whether the awardee met the SBA's definition of a small business at the time of award.",
   BusinessClassifications: "Socioeconomic categories the contractor qualifies for — e.g. woman-owned, veteran-owned, HUBZone, 8(a), disadvantaged. These affect set-aside eligibility.",
   CongressionalDistrict: "The U.S. Congressional district where the work is performed or the contractor is located. Used for reporting and oversight.",
+
+  // ── Successor tracking ────────────────────────────────────────────────────
+  SuccessorContract:    "When a contract ends, the government often issues a follow-on or recompete. This shows the likely successor contract we detected — the new award that replaced this one.",
+  IncumbentRetained:    "Did the same company win the recompete? 'Retained' means the incumbent kept the work. 'Lost' means a competitor took over.",
+  MatchConfidence:      "How confident we are this is the true successor. Based on timing, description similarity, value, and agency match. High = 80%+, Medium = 50-79%, Low = below 50%.",
 }
 
 export default tooltips

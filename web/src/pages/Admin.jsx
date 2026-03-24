@@ -24,7 +24,7 @@ export default function Admin({ onBack }) {
     loadData()
   }
 
-  const latestScore = qualityRuns[0]?.score
+  const latestScore = qualityRuns[0]?.score != null ? Number(qualityRuns[0].score) : null
   const scoreColor = latestScore >= 90 ? '#059669' : latestScore >= 80 ? '#E9A820' : '#dc3545'
   const pendingRules = pipelineRules.filter(r => r.status === 'pending')
   const approvedRules = pipelineRules.filter(r => r.status === 'approved')
@@ -61,7 +61,7 @@ export default function Admin({ onBack }) {
         ) : (
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
-              <span style={{ fontSize: 36, fontWeight: 700, color: scoreColor }}>{latestScore?.toFixed(1)}</span>
+              <span style={{ fontSize: 36, fontWeight: 700, color: scoreColor }}>{latestScore != null ? latestScore.toFixed(1) : '—'}</span>
               <span style={{ fontSize: 14, color: '#6B7280' }}>/ 100 latest score</span>
             </div>
             <table className="data-table" style={{ fontSize: 12 }}>
