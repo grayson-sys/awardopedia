@@ -251,11 +251,16 @@ export default function App() {
     }
   }
 
-  // Initial load and reload on filter/tab change
+  // Load data when on results view, or when filters/tabs change
   useEffect(() => {
-    loadData(false)
+    // Only load data if we're in results view (not home)
+    if (view === 'results') {
+      loadData(false)
+    }
+  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, query])
 
-    // Deep-link support
+  // Deep-link support (on mount only)
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const oppId = params.get('opp')
     const contractId = params.get('contract')
@@ -270,7 +275,7 @@ export default function App() {
         .then(c => { if (c) { setSelectedContract(c); setView('contract-detail') } })
         .catch(() => {})
     }
-  }, [activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, query])
+  }, [])
 
   // ── Filter options (derived from data) ─────────────────────────────────
   const stateOptions = useMemo(() => {
@@ -425,7 +430,7 @@ export default function App() {
               <img src="/logo-icon-navy-clean.jpg" alt="Awardopedia" width={48} height={48} style={{ borderRadius: 8 }} />
               <h1>Award<span>opedia</span></h1>
             </div>
-            <p className="home-subtitle">Free federal contract intelligence for small businesses</p>
+            <p className="home-subtitle">130,000+ federal & state contracts. Free for small businesses.</p>
 
             <form className="home-search" onSubmit={handleSearchSubmit}>
               <input
@@ -441,15 +446,12 @@ export default function App() {
 
             <div className="home-quick">
               <button onClick={() => { setActiveTab('opportunities'); goSearch() }}>
-                Open Opportunities <span className="home-count">{opportunities.filter(o => daysLeft(o.response_deadline) === null || daysLeft(o.response_deadline) >= 0).length}</span>
+                Browse Open Opportunities
               </button>
               <button onClick={() => { setActiveTab('contracts'); goSearch() }}>
-                Past Contracts <span className="home-count">{contracts.length}</span>
+                Browse Past Awards
               </button>
             </div>
-
-            {loading && <p className="text-muted mt-16">Loading data...</p>}
-            {error && <p style={{ color: 'var(--color-danger)', marginTop: 16 }}>Error: {error}</p>}
           </div>
 
           <footer className="home-footer">
