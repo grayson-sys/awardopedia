@@ -629,9 +629,60 @@ app.put('/api/admin/jurisdictions/:code', express.json(), async (req, res) => {
   }
 })
 
-// ─── Contracts ────────────────────────────────────────────
+// ─── Contracts (paginated) ────────────────────────────────────────────
 app.get('/api/contracts', async (req, res) => {
   try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200)
+    const offset = parseInt(req.query.offset) || 0
+    const { state, agency, naics, set_aside, q, data_source } = req.query
+
+    // Build WHERE clauses
+    const conditions = []
+    const params = []
+    let paramIdx = 1
+
+    if (state) {
+      conditions.push(`recipient_state = $${paramIdx++}`)
+      params.push(state)
+    }
+    if (agency) {
+      conditions.push(`agency_name ILIKE $${paramIdx++}`)
+      params.push(`%${agency}%`)
+    }
+    if (naics) {
+      conditions.push(`naics_code = $${paramIdx++}`)
+      params.push(naics)
+    }
+    if (set_aside) {
+      conditions.push(`set_aside_type = $${paramIdx++}`)
+      params.push(set_aside)
+    }
+    if (data_source) {
+      if (data_source === 'federal') {
+        conditions.push(`(data_source = 'usaspending' OR data_source IS NULL)`)
+      } else {
+        conditions.push(`data_source = $${paramIdx++}`)
+        params.push(data_source)
+      }
+    }
+    if (q) {
+      conditions.push(`(
+        recipient_name ILIKE $${paramIdx} OR
+        agency_name ILIKE $${paramIdx} OR
+        description ILIKE $${paramIdx} OR
+        naics_description ILIKE $${paramIdx}
+      )`)
+      params.push(`%${q}%`)
+      paramIdx++
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    // Get total count
+    const countResult = await pool.query(`SELECT COUNT(*) FROM contracts ${whereClause}`, params)
+    const total = parseInt(countResult.rows[0].count)
+
+    // Get paginated data
     const { rows } = await pool.query(`
       SELECT
         piid, award_id, description, naics_code, naics_description,
@@ -648,9 +699,12 @@ app.get('/api/contracts', async (req, res) => {
         report_generated, report_generated_at, report_purchase_count,
         data_source, jurisdiction_code, last_synced, created_at
       FROM contracts
+      ${whereClause}
       ORDER BY end_date ASC NULLS LAST
-    `)
-    res.json({ data: rows, meta: { total: rows.length } })
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, [...params, limit, offset])
+
+    res.json({ data: rows, meta: { total, limit, offset, hasMore: offset + rows.length < total } })
   } catch (e) {
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }
@@ -690,6 +744,57 @@ app.get('/api/contracts/:piid', async (req, res) => {
 // ─── Opportunities ────────────────────────────────────────
 app.get('/api/opportunities', async (req, res) => {
   try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200)
+    const offset = parseInt(req.query.offset) || 0
+    const { state, agency, naics, set_aside, q, data_source } = req.query
+
+    // Build WHERE clauses
+    const conditions = ["(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)"] // Only open
+    const params = []
+    let paramIdx = 1
+
+    if (state) {
+      conditions.push(`place_of_performance_state = $${paramIdx++}`)
+      params.push(state)
+    }
+    if (agency) {
+      conditions.push(`agency_name ILIKE $${paramIdx++}`)
+      params.push(`%${agency}%`)
+    }
+    if (naics) {
+      conditions.push(`o.naics_code = $${paramIdx++}`)
+      params.push(naics)
+    }
+    if (set_aside) {
+      conditions.push(`set_aside_type = $${paramIdx++}`)
+      params.push(set_aside)
+    }
+    if (data_source) {
+      if (data_source === 'federal') {
+        conditions.push(`(o.data_source = 'federal' OR o.data_source IS NULL)`)
+      } else {
+        conditions.push(`o.data_source = $${paramIdx++}`)
+        params.push(data_source)
+      }
+    }
+    if (q) {
+      conditions.push(`(
+        title ILIKE $${paramIdx} OR
+        agency_name ILIKE $${paramIdx} OR
+        description ILIKE $${paramIdx} OR
+        o.naics_description ILIKE $${paramIdx}
+      )`)
+      params.push(`%${q}%`)
+      paramIdx++
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    // Get total count
+    const countResult = await pool.query(`SELECT COUNT(*) FROM opportunities o ${whereClause}`, params)
+    const total = parseInt(countResult.rows[0].count)
+
+    // Get paginated data
     const { rows } = await pool.query(`
       SELECT o.*,
         (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
@@ -709,9 +814,12 @@ app.get('/api/opportunities', async (req, res) => {
       FROM opportunities o
       LEFT JOIN opportunity_intel i USING (notice_id)
       LEFT JOIN psc_codes p ON o.psc_code = p.code
+      ${whereClause}
       ORDER BY o.response_deadline ASC NULLS LAST
-    `)
-    res.json({ data: rows, meta: { total: rows.length } })
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `, [...params, limit, offset])
+
+    res.json({ data: rows, meta: { total, limit, offset, hasMore: offset + rows.length < total } })
   } catch (e) {
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }

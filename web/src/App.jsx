@@ -196,60 +196,81 @@ export default function App() {
   const [filterAgency, setFilterAgency] = useState('')
   const [filterDataSource, setFilterDataSource] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [page, setPage] = useState(1)
-  const PAGE_SIZE = 10
+  const PAGE_SIZE = 50
+  const [totalContracts, setTotalContracts] = useState(0)
+  const [totalOpportunities, setTotalOpportunities] = useState(0)
+  const [hasMoreContracts, setHasMoreContracts] = useState(false)
+  const [hasMoreOpportunities, setHasMoreOpportunities] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   const searchRef = useRef(null)
 
-  // ── Data loading ────────────────────────────────────────────────────────
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true)
-        setError(null)
-        const [cRes, oRes] = await Promise.all([
-          fetch('/api/contracts'),
-          fetch('/api/opportunities'),
-        ])
-        if (!cRes.ok) throw new Error(`Contracts API: ${cRes.status}`)
-        const cData = await cRes.json()
-        const contractList = cData.data || []
-        setContracts(contractList)
+  // Build query string from filters
+  const buildQuery = (extra = {}) => {
+    const params = new URLSearchParams()
+    if (filterState) params.set('state', filterState)
+    if (filterAgency) params.set('agency', filterAgency)
+    if (filterNaics) params.set('naics', filterNaics)
+    if (filterSetAside) params.set('set_aside', filterSetAside)
+    if (filterDataSource) params.set('data_source', filterDataSource)
+    if (query) params.set('q', query)
+    Object.entries(extra).forEach(([k, v]) => params.set(k, v))
+    return params.toString()
+  }
 
-        let oppList = []
-        if (oRes.ok) {
-          const oData = await oRes.json()
-          oppList = oData.data || []
-          setOpportunities(oppList)
-        }
+  // ── Data loading (paginated) ────────────────────────────────────────────
+  async function loadData(append = false) {
+    try {
+      if (!append) setLoading(true)
+      else setLoadingMore(true)
+      setError(null)
 
-        // Deep-link support
-        const params = new URLSearchParams(window.location.search)
-        const oppId = params.get('opp')
-        const contractId = params.get('contract')
-        if (oppId) {
-          const match = oppList.find(o => o.notice_id === oppId)
-          if (match) { setSelectedOpp(match); setView('opp-detail') }
-        } else if (contractId) {
-          const match = contractList.find(c => c.piid === contractId)
-          if (match) {
-            setSelectedContract(match)
-            setView('contract-detail')
-            // Fetch full details (includes successor, company profile, etc.)
-            fetch(`/api/contracts/${contractId}`)
-              .then(r => r.ok ? r.json() : null)
-              .then(full => { if (full) setSelectedContract(full) })
-              .catch(() => {})
-          }
-        }
-      } catch (e) {
-        setError(e.message)
-      } finally {
-        setLoading(false)
+      const offset = append ? (activeTab === 'opportunities' ? opportunities.length : contracts.length) : 0
+      const qs = buildQuery({ limit: PAGE_SIZE, offset })
+
+      if (activeTab === 'opportunities') {
+        const res = await fetch(`/api/opportunities?${qs}`)
+        if (!res.ok) throw new Error(`Opportunities API: ${res.status}`)
+        const data = await res.json()
+        setOpportunities(append ? [...opportunities, ...data.data] : data.data)
+        setTotalOpportunities(data.meta.total)
+        setHasMoreOpportunities(data.meta.hasMore)
+      } else {
+        const res = await fetch(`/api/contracts?${qs}`)
+        if (!res.ok) throw new Error(`Contracts API: ${res.status}`)
+        const data = await res.json()
+        setContracts(append ? [...contracts, ...data.data] : data.data)
+        setTotalContracts(data.meta.total)
+        setHasMoreContracts(data.meta.hasMore)
       }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
     }
-    load()
-  }, [])
+  }
+
+  // Initial load and reload on filter/tab change
+  useEffect(() => {
+    loadData(false)
+
+    // Deep-link support
+    const params = new URLSearchParams(window.location.search)
+    const oppId = params.get('opp')
+    const contractId = params.get('contract')
+    if (oppId) {
+      fetch(`/api/opportunities/${oppId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(opp => { if (opp) { setSelectedOpp(opp); setView('opp-detail') } })
+        .catch(() => {})
+    } else if (contractId) {
+      fetch(`/api/contracts/${contractId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(c => { if (c) { setSelectedContract(c); setView('contract-detail') } })
+        .catch(() => {})
+    }
+  }, [activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, query])
 
   // ── Filter options (derived from data) ─────────────────────────────────
   const stateOptions = useMemo(() => {
@@ -289,49 +310,24 @@ export default function App() {
   // ── Filtering logic ────────────────────────────────────────────────────
   const q = query.toLowerCase().trim()
 
-  const filteredContracts = useMemo(() => {
-    return contracts.filter(c => {
-      if (q && ![
-        c.recipient_name, c.agency_name, c.naics_description, c.naics_code,
-        c.psc_description, c.description, c.llama_summary, c.piid, c.recipient_state,
-      ].some(v => v && String(v).toLowerCase().includes(q))) return false
-      if (filterState && c.recipient_state !== filterState) return false
-      if (filterSetAside && c.set_aside_type !== filterSetAside) return false
-      if (filterNaics && c.naics_code !== filterNaics) return false
-      if (filterAgency && topAgency(c.agency_name) !== filterAgency) return false
-      // Match 'federal' to 'usaspending' data_source for contracts
-      const cSource = c.data_source || 'usaspending'
-      if (filterDataSource === 'federal' && cSource !== 'usaspending') return false
-      if (filterDataSource && filterDataSource !== 'federal' && cSource !== filterDataSource) return false
-      return true
-    })
-  }, [contracts, q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource])
-
-  const filteredOpportunities = useMemo(() => {
-    return opportunities.filter(o => {
-      // Only show open opportunities (deadline in future or null)
-      const d = daysLeft(o.response_deadline)
-      if (d !== null && d < 0) return false
-
-      if (q && ![
-        o.title, o.agency_name, o.naics_description, o.naics_code,
-        o.psc_description, o.description, o.llama_summary, o.notice_id,
-        o.place_of_performance_state, o.set_aside_type,
-      ].some(v => v && String(v).toLowerCase().includes(q))) return false
-      if (filterState && o.place_of_performance_state !== filterState) return false
-      if (filterSetAside && o.set_aside_type !== filterSetAside) return false
-      if (filterNaics && o.naics_code !== filterNaics) return false
-      if (filterAgency && topAgency(o.agency_name) !== filterAgency) return false
-      if (filterDataSource && (o.data_source || 'federal') !== filterDataSource) return false
-      return true
-    })
-  }, [opportunities, q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource])
+  // Server does filtering now - just use data directly
+  const filteredContracts = contracts
+  const filteredOpportunities = opportunities
 
   const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource
-  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource(''); setPage(1) }
+  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource('') }
 
-  // Reset page when search/filters/tab change
-  useEffect(() => { setPage(1) }, [q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource, activeTab])
+  // History management for back button
+  useEffect(() => {
+    const handlePopState = () => {
+      // On back button, return to list view
+      setView('list')
+      setSelectedOpp(null)
+      setSelectedContract(null)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   // ── Navigation helpers ─────────────────────────────────────────────────
   function goSearch() {
@@ -350,7 +346,7 @@ export default function App() {
     // Set initial data from list, then fetch full details with company profile
     setSelectedContract(c)
     setView('contract-detail')
-    window.history.replaceState(null, '', `?contract=${c.piid}`)
+    window.history.pushState({ view: 'contract-detail', id: c.piid }, '', `?contract=${c.piid}`)
 
     // Fetch full contract details (includes recipient enrichment)
     try {
@@ -367,7 +363,7 @@ export default function App() {
   function openOpp(o) {
     setSelectedOpp(o)
     setView('opp-detail')
-    window.history.replaceState(null, '', `?opp=${o.notice_id}`)
+    window.history.pushState({ view: 'opp-detail', id: o.notice_id }, '', `?opp=${o.notice_id}`)
   }
 
   function goHome() {
@@ -547,10 +543,10 @@ export default function App() {
             {/* Tabs */}
             <div className="tabs">
               <button className={`tab ${activeTab === 'opportunities' ? 'active' : ''}`} onClick={() => setActiveTab('opportunities')}>
-                Open Opportunities <span className="tab-count">{filteredOpportunities.length}</span>
+                Open Opportunities <span className="tab-count">{totalOpportunities.toLocaleString()}</span>
               </button>
               <button className={`tab ${activeTab === 'contracts' ? 'active' : ''}`} onClick={() => setActiveTab('contracts')}>
-                Past Contracts <span className="tab-count">{filteredContracts.length}</span>
+                Past Contracts <span className="tab-count">{totalContracts.toLocaleString()}</span>
               </button>
             </div>
 
@@ -576,7 +572,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredOpportunities.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(o => (
+                          {filteredOpportunities.map(o => (
                             <tr key={o.notice_id} onClick={() => openOpp(o)}>
                               <td>
                                 <div className="row-title">{o.title || '—'}</div>
@@ -600,7 +596,13 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    <Pagination total={filteredOpportunities.length} page={page} pageSize={PAGE_SIZE} onChange={setPage} />
+                    {hasMoreOpportunities && (
+                      <div style={{ textAlign: 'center', padding: 16 }}>
+                        <button className="btn btn-navy" onClick={() => loadData(true)} disabled={loadingMore}>
+                          {loadingMore ? 'Loading...' : `Load More (${opportunities.length} of ${totalOpportunities})`}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </>
@@ -628,7 +630,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredContracts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(c => (
+                          {filteredContracts.map(c => (
                             <tr key={c.piid} onClick={() => openContract(c)}>
                               <td>
                                 <div className="row-title">{c.recipient_name || '—'}</div>
@@ -658,7 +660,13 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    <Pagination total={filteredContracts.length} page={page} pageSize={PAGE_SIZE} onChange={setPage} />
+                    {hasMoreContracts && (
+                      <div style={{ textAlign: 'center', padding: 16 }}>
+                        <button className="btn btn-navy" onClick={() => loadData(true)} disabled={loadingMore}>
+                          {loadingMore ? 'Loading...' : `Load More (${contracts.length} of ${totalContracts})`}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </>
