@@ -19,20 +19,14 @@ An approved plan is NOT a blank check to execute all steps back-to-back.
 After each significant step (delete, deploy, DNS change, DB migration): STOP, report, wait for FIREFLY before the next step.
 YOLO mode is not acceptable even when it works out.
 
-## ⛔ ABSOLUTE RULE — READ THIS FIRST
-**VERCEL IS ABANDONED. DO NOT USE VERCEL. DO NOT DEPLOY TO VERCEL.**
-**EVERYTHING runs on DigitalOcean (DO App Platform) or the Mac Mini. No exceptions.**
+## Hosting — DigitalOcean Only
+**All hosting is on DigitalOcean App Platform. Push to main auto-deploys.**
 - Frontend: React + Vite → DO App Platform (static site)
 - API: Node.js/Express (server/server.js) → DO App Platform (service)
 - DB: PostgreSQL 15 → DO Managed Database
 - Scripts: Python 3 → Mac Mini LaunchAgents
 - Static pages: DO Spaces (awardopedia-static, nyc3)
 - DNS/CDN: Cloudflare → DO App Platform
-
-NOTE: awardopedia.com is currently STILL pointed at a legacy Vercel deployment.
-That Vercel deployment must be replaced by the DO App Platform frontend.
-Cloudflare DNS will be updated to point to DO once the React+Vite app is deployed there.
-DO NOT touch or redeploy the Vercel project. Let it rot.
 
 Current phase: 8 — Report generation + Stripe + PDF/CSV + caching
 NOTE: Phases 7 and 7.5 complete. Phase 8 is next.

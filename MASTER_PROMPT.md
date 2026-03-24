@@ -331,7 +331,7 @@ Site: awardopedia.com
 ARCHITECTURE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Everything on DigitalOcean. No Vercel.
+Everything on DigitalOcean App Platform. Push to main auto-deploys.
 
 DO App Platform — free static site tier:
   React + Vite frontend
