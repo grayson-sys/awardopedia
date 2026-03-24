@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export default function Admin({ onBack }) {
+export default function Admin({ onBack, onJurisdictions }) {
   const [qualityRuns, setQualityRuns] = useState([])
   const [feedback, setFeedback] = useState([])
   const [pipelineRules, setPipelineRules] = useState([])
@@ -50,6 +50,34 @@ export default function Admin({ onBack }) {
               <div style={{ fontSize: 12, color: '#6B7280' }}>{label}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* SLED Jurisdictions Link */}
+      {onJurisdictions && (
+        <div
+          className="card"
+          onClick={onJurisdictions}
+          style={{
+            marginBottom: 24,
+            cursor: 'pointer',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: 20,
+            background: 'linear-gradient(135deg, #1a3a5c 0%, #2e5a8a 100%)',
+            color: '#fff',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
+              Jurisdictions & Pipeline Rules
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>
+              Manage Federal, State, and Local data sources
+            </div>
+          </div>
+          <div style={{ fontSize: 24 }}>→</div>
         </div>
       )}
 

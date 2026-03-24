@@ -204,6 +204,18 @@ def _clean_contact(contact: dict) -> dict:
     if name:
         name = _re.sub(r'\d+$', '', name).strip()
 
+    # ── Step 6: Format phone as (XXX) XXX-XXXX ───────────────────────────
+    if phone:
+        # Strip all non-digits
+        digits = _re.sub(r'\D', '', phone)
+        # If 11 digits starting with 1, drop the leading 1
+        if len(digits) == 11 and digits[0] == '1':
+            digits = digits[1:]
+        # Format as (XXX) XXX-XXXX if 10 digits
+        if len(digits) == 10:
+            phone = f'({digits[:3]}) {digits[3:6]}-{digits[6:]}'
+        # Otherwise keep original (might be international or extension)
+
     return {**contact, 'fullName': name or None, 'phone': phone or None}
 
 
@@ -239,6 +251,92 @@ _TITLE_ABBREV = {
     'SYS':    'Systems',
     'SUPP':   'Support',
 }
+
+# Military/government abbreviations for agency names
+_AGENCY_ABBREV = {
+    'DEPT': 'Department',
+    'USPFO': 'US Property and Fiscal Office',
+    'JFHQ': 'Joint Force Headquarters',
+    'USSOCOM': 'US Special Operations Command',
+    'NAVSUP': 'Naval Supply Systems Command',
+    'NAVAIR': 'Naval Air Systems Command',
+    'NAVSEA': 'Naval Sea Systems Command',
+    'SPAWAR': 'Space and Naval Warfare Systems',
+    'MARCORSYSCOM': 'Marine Corps Systems Command',
+    'IMCOM': 'Installation Management Command',
+    'FMWR': 'Family and Morale, Welfare and Recreation',
+    'TRADOC': 'Training and Doctrine Command',
+    'FORSCOM': 'Forces Command',
+    'MEDCOM': 'Medical Command',
+    'AMC': 'Army Materiel Command',
+    'INSCOM': 'Intelligence and Security Command',
+    'USACE': 'US Army Corps of Engineers',
+    'NGB': 'National Guard Bureau',
+    'DLA': 'Defense Logistics Agency',
+    'DCMA': 'Defense Contract Management Agency',
+    'DISA': 'Defense Information Systems Agency',
+    'DFAS': 'Defense Finance and Accounting Service',
+    'GSA': 'General Services Administration',
+    'FAA': 'Federal Aviation Administration',
+    'HQ': 'Headquarters',
+}
+
+def _clean_agency(raw: str) -> str:
+    """
+    Clean up SAM.gov agency hierarchy strings:
+      1. Strip internal office codes (W7M8, 36C, etc.)
+      2. Title-case segments
+      3. Expand military abbreviations
+      4. Replace "." separator with " > "
+    Example: "DEPT OF DEFENSE.DEPT OF THE ARMY.W7M8 USPFO" → "Defense Department > Army > US Property and Fiscal Office"
+    """
+    if not raw:
+        return raw
+
+    segments = raw.split('.')
+    cleaned = []
+
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+
+        # Strip leading internal codes (4-6 alphanumeric chars followed by space)
+        seg = _re.sub(r'^[A-Z0-9]{4,6}\s+', '', seg)
+
+        # Skip if segment is just an internal code
+        if _re.match(r'^[A-Z0-9]{4,8}$', seg):
+            continue
+
+        # Handle "DEPT OF X" → "X Department"
+        dept_match = _re.match(r'DEPT\s+OF\s+(?:THE\s+)?(.+)', seg, _re.IGNORECASE)
+        if dept_match:
+            dept_name = dept_match.group(1).strip()
+            # Special case: "DEFENSE" → "Defense Department"
+            if dept_name.upper() == 'DEFENSE':
+                seg = 'Defense Department'
+            else:
+                # Title case the department name
+                seg = dept_name.title() + ' Department'
+        else:
+            # Expand known abbreviations
+            words = seg.split()
+            expanded = []
+            for w in words:
+                upper_w = w.upper().strip('(),')
+                if upper_w in _AGENCY_ABBREV:
+                    expanded.append(_AGENCY_ABBREV[upper_w])
+                elif w == w.upper() and len(w) > 2:
+                    # ALL CAPS word, title-case it
+                    expanded.append(w.title())
+                else:
+                    expanded.append(w)
+            seg = ' '.join(expanded)
+
+        if seg and seg not in cleaned:  # Avoid duplicates
+            cleaned.append(seg)
+
+    return ' > '.join(cleaned) if cleaned else raw
 
 def _clean_title(raw: str) -> str:
     """
@@ -373,16 +471,16 @@ def parse_opportunity(raw: dict) -> dict:
     }
 
     # Use place of performance state if it's a valid 2-letter US code, else fall back to office
+    state_from_office = False
     if not pop_state or len(pop_state) > 2 or '-' in (pop_state or ''):
         pop_state = office_state
+        state_from_office = True
     if not pop_city:
-        # Only fall back to office city if we ALSO don't have a performance state/zip.
-        # Otherwise the office city (e.g. Omaha NE) gets mixed with the performance
-        # state (e.g. Colorado) — producing nonsense like "Omaha, Colorado."
-        if not pop_state:
+        # If state came from office address, use office city too (they go together)
+        if state_from_office and office_city:
             pop_city = office_city
-        else:
-            # We have a state but no city — try to derive city from ZIP via zippopotam.us
+        # Otherwise try to derive city from ZIP via zippopotam.us
+        elif pop_state:
             pop_zip = (g('placeOfPerformance.zip') or '').strip()
             if pop_zip and len(pop_zip) >= 5:
                 try:
@@ -449,7 +547,7 @@ def parse_opportunity(raw: dict) -> dict:
         'naics_code':                 str(g('naicsCode', 'naics') or '').strip() or None,
         'naics_description':          _title_case_desc(g('naicsDescription')),
         'psc_code':                   g('classificationCode', 'pscCode', 'psc'),
-        'agency_name':                g('fullParentPathName', 'departmentName', 'agencyName'),
+        'agency_name':                _clean_agency(g('fullParentPathName', 'departmentName', 'agencyName')),
         'sub_agency_name':            g('subtierName', 'subTierOrg'),
         'office_name':                g('officeName', 'office'),
         'contracting_officer':        primary.get('fullName') or primary.get('name'),
@@ -471,6 +569,8 @@ def parse_opportunity(raw: dict) -> dict:
         'sam_url_alive':              True,
         'sam_url_checked':            datetime.utcnow().isoformat(),
         'last_synced':                datetime.utcnow().isoformat(),
+        'data_source':                'federal',
+        'jurisdiction_code':          'federal',
     }
 
 

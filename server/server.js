@@ -567,6 +567,68 @@ app.get('/api/admin/stats', async (req, res) => {
   } catch (e) { res.json({}) }
 })
 
+// ─── Jurisdictions & Pipeline Rules (SLED Admin) ─────────────────────────
+app.get('/api/admin/jurisdictions', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM jurisdictions ORDER BY
+        CASE type WHEN 'federal' THEN 0 WHEN 'state' THEN 1 WHEN 'county' THEN 2 WHEN 'city' THEN 3 ELSE 4 END,
+        gdp_rank NULLS LAST,
+        name
+    `)
+    res.json(rows)
+  } catch (e) {
+    // If table doesn't exist yet, return empty array
+    res.json([])
+  }
+})
+
+app.get('/api/admin/pipeline-rules', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM pipeline_rules
+      WHERE is_active = true
+      ORDER BY jurisdiction_code, stage, rule_name
+    `)
+    res.json(rows)
+  } catch (e) {
+    res.json([])
+  }
+})
+
+app.post('/api/admin/pipeline-rules', express.json(), async (req, res) => {
+  const { jurisdiction_code, rule_name, stage, rule_type, problem_description, solution_description, field_name } = req.body
+  try {
+    const { rows } = await pool.query(`
+      INSERT INTO pipeline_rules (jurisdiction_code, rule_name, stage, rule_type, problem_description, solution_description, field_name)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [jurisdiction_code, rule_name, stage, rule_type, problem_description, solution_description, field_name])
+    res.json(rows[0])
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.put('/api/admin/jurisdictions/:code', express.json(), async (req, res) => {
+  const { code } = req.params
+  const { pipeline_status, contracts_count, last_fetch_at } = req.body
+  try {
+    const { rows } = await pool.query(`
+      UPDATE jurisdictions SET
+        pipeline_status = COALESCE($2, pipeline_status),
+        contracts_count = COALESCE($3, contracts_count),
+        last_fetch_at = COALESCE($4, last_fetch_at),
+        updated_at = NOW()
+      WHERE code = $1
+      RETURNING *
+    `, [code, pipeline_status, contracts_count, last_fetch_at])
+    res.json(rows[0])
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Contracts ────────────────────────────────────────────
 app.get('/api/contracts', async (req, res) => {
   try {
@@ -584,7 +646,7 @@ app.get('/api/contracts', async (req, res) => {
         contract_type, award_type, extent_competed,
         usaspending_url, usaspending_alive,
         report_generated, report_generated_at, report_purchase_count,
-        data_source, last_synced, created_at
+        data_source, jurisdiction_code, last_synced, created_at
       FROM contracts
       ORDER BY end_date ASC NULLS LAST
     `)

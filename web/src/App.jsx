@@ -8,6 +8,7 @@ import ApiKeys from './pages/ApiKeys'
 import Admin from './pages/Admin'
 import Auth from './pages/Auth'
 import Credits from './pages/Credits'
+import Jurisdictions from './pages/Jurisdictions'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -193,6 +194,7 @@ export default function App() {
   const [filterSetAside, setFilterSetAside] = useState('')
   const [filterNaics, setFilterNaics] = useState('')
   const [filterAgency, setFilterAgency] = useState('')
+  const [filterDataSource, setFilterDataSource] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
@@ -297,9 +299,13 @@ export default function App() {
       if (filterSetAside && c.set_aside_type !== filterSetAside) return false
       if (filterNaics && c.naics_code !== filterNaics) return false
       if (filterAgency && topAgency(c.agency_name) !== filterAgency) return false
+      // Match 'federal' to 'usaspending' data_source for contracts
+      const cSource = c.data_source || 'usaspending'
+      if (filterDataSource === 'federal' && cSource !== 'usaspending') return false
+      if (filterDataSource && filterDataSource !== 'federal' && cSource !== filterDataSource) return false
       return true
     })
-  }, [contracts, q, filterState, filterSetAside, filterNaics, filterAgency])
+  }, [contracts, q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource])
 
   const filteredOpportunities = useMemo(() => {
     return opportunities.filter(o => {
@@ -316,15 +322,16 @@ export default function App() {
       if (filterSetAside && o.set_aside_type !== filterSetAside) return false
       if (filterNaics && o.naics_code !== filterNaics) return false
       if (filterAgency && topAgency(o.agency_name) !== filterAgency) return false
+      if (filterDataSource && (o.data_source || 'federal') !== filterDataSource) return false
       return true
     })
-  }, [opportunities, q, filterState, filterSetAside, filterNaics, filterAgency])
+  }, [opportunities, q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource])
 
-  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency
-  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setPage(1) }
+  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource
+  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource(''); setPage(1) }
 
   // Reset page when search/filters/tab change
-  useEffect(() => { setPage(1) }, [q, filterState, filterSetAside, filterNaics, filterAgency, activeTab])
+  useEffect(() => { setPage(1) }, [q, filterState, filterSetAside, filterNaics, filterAgency, filterDataSource, activeTab])
 
   // ── Navigation helpers ─────────────────────────────────────────────────
   function goSearch() {
@@ -520,6 +527,14 @@ export default function App() {
                       {naicsOptions.map(([code, desc]) => <option key={code} value={code}>{code} — {desc}</option>)}
                     </select>
                   </div>
+                  <div className="filter-group">
+                    <label>Jurisdiction</label>
+                    <select value={filterDataSource} onChange={e => setFilterDataSource(e.target.value)}>
+                      <option value="">All (Federal + State)</option>
+                      <option value="federal">Federal Only</option>
+                      <option value="tx">Texas (TxDOT)</option>
+                    </select>
+                  </div>
                 </div>
                 {hasActiveFilters && (
                   <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear all filters</button>
@@ -618,6 +633,11 @@ export default function App() {
                               <td>
                                 <div className="row-title">{c.recipient_name || '—'}</div>
                                 <div className="row-meta">{topAgency(c.agency_name)}</div>
+                                {c.data_source && c.data_source !== 'usaspending' && (
+                                  <span className="badge badge-state" style={{ marginTop: 3, marginRight: 4, background: '#2e7d32', color: '#fff' }}>
+                                    {c.data_source.toUpperCase()}
+                                  </span>
+                                )}
                                 {c.set_aside_type && <span className="badge badge-navy" style={{ marginTop: 3 }}>{expandSetAside(c.set_aside_type)}</span>}
                               </td>
                               <td>
@@ -682,7 +702,8 @@ export default function App() {
       {/* API & Terms */}
       {view === 'api' && <ApiKeys onBack={(target) => target === 'terms' ? setView('terms') : goHome()} />}
       {view === 'terms' && <Terms onBack={goHome} />}
-      {view === 'admin' && <Admin onBack={goHome} />}
+      {view === 'admin' && <Admin onBack={goHome} onJurisdictions={() => setView('jurisdictions')} />}
+      {view === 'jurisdictions' && <Jurisdictions onBack={() => setView('admin')} />}
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
       {view === 'auth' && <Auth onLogin={handleLogin} />}
     </div>
