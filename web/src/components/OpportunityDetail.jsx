@@ -82,7 +82,7 @@ function RenderProse({ text }) {
 
 // ── Report modal — full-page overlay with cover page + spinning ─────────────
 
-function ReportModal({ opp, onClose, token, onSignIn }) {
+function ReportModal({ opp, onClose, token, onSignIn, onHome }) {
   const [status, setStatus] = useState('ready') // ready | generating | done | error
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
@@ -160,10 +160,10 @@ function ReportModal({ opp, onClose, token, onSignIn }) {
         {status !== 'done' && (
           <div className="report-cover">
             <div className="report-cover-inner">
-              <div className="report-cover-logo">
+              <button className="report-cover-logo" onClick={() => { onClose(); onHome && onHome() }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <img src="/logo-icon-navy-clean.jpg" alt="" width={40} height={40} style={{ borderRadius: 6 }} />
                 <span>Award<em>opedia</em></span>
-              </div>
+              </button>
               <div className="report-cover-type">Opportunity Intelligence Report</div>
               <h1 className="report-cover-title">{opp.title}</h1>
               <div className="report-cover-meta">
@@ -233,11 +233,11 @@ function ReportModal({ opp, onClose, token, onSignIn }) {
           <div className="report-document">
             {/* Header bar */}
             <div className="report-doc-header">
-              <div className="report-doc-header-left">
+              <button className="report-doc-header-left" onClick={() => { onClose(); onHome && onHome() }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <img src="/logo-icon-navy-clean.jpg" alt="" width={24} height={24} style={{ borderRadius: 4 }} />
                 <span style={{ fontWeight: 700, color: '#1B3A6B' }}>Awardopedia</span>
                 <span style={{ color: '#9CA3AF', fontSize: 12 }}>Intelligence Report</span>
-              </div>
+              </button>
               <div style={{ display: 'flex', gap: 8 }}>
                 <a href={`/api/reports/csv/opportunity/${opp.notice_id}`} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }} download>CSV</a>
                 <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print</button>
@@ -441,7 +441,7 @@ function DocTile({ att, index }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredits, onSignIn }) {
+export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredits, onSignIn, onHome }) {
   const days = daysUntil(opp.response_deadline)
   const { agency, office: subAgency } = parseAgencyHierarchy(opp.agency_name)
   const [showReport, setShowReport] = useState(false)
@@ -450,7 +450,7 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
 
   return (
     <div>
-      {showReport && <ReportModal opp={opp} token={token} onClose={() => setShowReport(false)} onSignIn={onSignIn} />}
+      {showReport && <ReportModal opp={opp} token={token} onClose={() => setShowReport(false)} onSignIn={onSignIn} onHome={onHome} />}
 
       <div className="detail-header">
         <div className="container">

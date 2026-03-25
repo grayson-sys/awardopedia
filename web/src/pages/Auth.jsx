@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Auth({ onLogin }) {
+export default function Auth({ onLogin, onHome }) {
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot' | 'reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -35,11 +35,12 @@ export default function Auth({ onLogin }) {
         setResetSent(true)
         return
       }
-      if (mode === 'reset') {
+      if (mode === 'forgot' && resetSent && displayCode) {
+        // Step 2: Set new password using the displayed code
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: resetCode, password: newPassword })
+          body: JSON.stringify({ code: displayCode, password: newPassword })
         })
         const data = await res.json()
         if (!res.ok || data.error) throw new Error(data.error)
@@ -69,10 +70,10 @@ export default function Auth({ onLogin }) {
   return (
     <div style={{ maxWidth: 440, margin: '60px auto', padding: '0 24px' }}>
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8 }}>
+        <button onClick={onHome} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           <img src="/logo-icon-navy-clean.jpg" alt="" width={36} height={36} style={{ borderRadius: 6 }} />
           <span style={{ fontSize: 24, fontWeight: 700, color: '#1B3A6B' }}>Award<span style={{ color: '#E9A820' }}>opedia</span></span>
-        </div>
+        </button>
         <p style={{ color: '#6B7280', fontSize: 14 }}>
           {mode === 'login' ? 'Sign in to your account' : mode === 'register' ? 'Create your free account' : 'Reset your password'}
         </p>
@@ -146,45 +147,20 @@ export default function Auth({ onLogin }) {
             </div>
           )}
 
-          {mode === 'forgot' && resetSent && (
-            <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
-              {displayCode ? (
-                <>
-                  <div style={{ marginBottom: 12 }}>Your reset code:</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 4, fontFamily: 'monospace', color: '#1B3A6B' }}>{displayCode}</div>
-                  <div style={{ marginTop: 12, fontSize: 12, color: '#6B7280' }}>Enter this code below to set a new password</div>
-                </>
-              ) : (
-                <>Check your email for a password reset link.</>
-              )}
-            </div>
-          )}
-
-          {mode === 'forgot' && resetSent && displayCode && (
-            <button
-              type="button"
-              className="btn btn-navy"
-              style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15, marginTop: 8 }}
-              onClick={() => { setMode('reset'); setResetCode(displayCode); setError(null) }}
-            >
-              Reset Password Now
-            </button>
-          )}
-
-          {mode === 'reset' && !resetComplete && (
+          {mode === 'forgot' && resetSent && !resetComplete && (
             <>
-              <div>
-                <label style={labelStyle}>Reset Code</label>
-                <input type="text" value={resetCode} onChange={e => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))} style={{ ...inputStyle, fontFamily: 'monospace', letterSpacing: 4, textAlign: 'center', fontSize: 18 }} placeholder="000000" required maxLength={6} />
+              <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center', marginBottom: 12 }}>
+                <div style={{ marginBottom: 8 }}>Your reset code:</div>
+                <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 4, fontFamily: 'monospace', color: '#1B3A6B' }}>{displayCode}</div>
               </div>
               <div>
                 <label style={labelStyle}>New Password</label>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={inputStyle} required minLength={8} />
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={inputStyle} placeholder="Enter new password" required minLength={8} autoFocus />
               </div>
             </>
           )}
 
-          {mode === 'reset' && resetComplete && (
+          {(mode === 'forgot' || mode === 'reset') && resetComplete && (
             <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
               Password reset successfully! You can now sign in.
             </div>
@@ -192,9 +168,13 @@ export default function Auth({ onLogin }) {
 
           {error && <div style={{ color: '#B91C1C', fontSize: 13 }}>{error}</div>}
 
-          {!(mode === 'forgot' && resetSent) && !(mode === 'reset' && resetComplete) && (
+          {!resetComplete && (
             <button type="submit" className="btn btn-navy" style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15 }} disabled={loading}>
-              {loading ? 'Working...' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'reset' ? 'Set New Password' : 'Send Reset Code'}
+              {loading ? 'Working...' :
+                mode === 'login' ? 'Sign In' :
+                mode === 'register' ? 'Create Account' :
+                mode === 'forgot' && resetSent ? 'Set New Password' :
+                'Send Reset Code'}
             </button>
           )}
         </form>

@@ -714,6 +714,7 @@ export default function App() {
           token={token}
           onBuyCredits={() => setView('credits')}
           onSignIn={() => setView('auth')}
+          onHome={goHome}
           onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}
@@ -724,7 +725,7 @@ export default function App() {
       {view === 'admin' && <Admin onBack={goHome} onJurisdictions={() => setView('jurisdictions')} />}
       {view === 'jurisdictions' && <Jurisdictions onBack={() => setView('admin')} />}
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
-      {view === 'auth' && <Auth onLogin={handleLogin} />}
+      {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
     </div>
   )
 }
