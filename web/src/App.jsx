@@ -199,8 +199,11 @@ export default function App() {
   const PAGE_SIZE = 50
   const [totalContracts, setTotalContracts] = useState(0)
   const [totalOpportunities, setTotalOpportunities] = useState(0)
+  const [totalPending, setTotalPending] = useState(0)
   const [hasMoreContracts, setHasMoreContracts] = useState(false)
   const [hasMoreOpportunities, setHasMoreOpportunities] = useState(false)
+  const [hasMorePending, setHasMorePending] = useState(false)
+  const [pendingOpportunities, setPendingOpportunities] = useState([])
   const [loadingMore, setLoadingMore] = useState(false)
 
   const searchRef = useRef(null)
@@ -225,17 +228,27 @@ export default function App() {
       else setLoadingMore(true)
       setError(null)
 
-      const offset = append ? (activeTab === 'opportunities' ? opportunities.length : contracts.length) : 0
-      const qs = buildQuery({ limit: PAGE_SIZE, offset })
-
       if (activeTab === 'opportunities') {
+        const offset = append ? opportunities.length : 0
+        const qs = buildQuery({ limit: PAGE_SIZE, offset, status: 'open' })
         const res = await fetch(`/api/opportunities?${qs}`)
         if (!res.ok) throw new Error(`Opportunities API: ${res.status}`)
         const data = await res.json()
         setOpportunities(append ? [...opportunities, ...data.data] : data.data)
         setTotalOpportunities(data.meta.total)
         setHasMoreOpportunities(data.meta.hasMore)
+      } else if (activeTab === 'pending') {
+        const offset = append ? pendingOpportunities.length : 0
+        const qs = buildQuery({ limit: PAGE_SIZE, offset, status: 'pending' })
+        const res = await fetch(`/api/opportunities?${qs}`)
+        if (!res.ok) throw new Error(`Opportunities API: ${res.status}`)
+        const data = await res.json()
+        setPendingOpportunities(append ? [...pendingOpportunities, ...data.data] : data.data)
+        setTotalPending(data.meta.total)
+        setHasMorePending(data.meta.hasMore)
       } else {
+        const offset = append ? contracts.length : 0
+        const qs = buildQuery({ limit: PAGE_SIZE, offset })
         const res = await fetch(`/api/contracts?${qs}`)
         if (!res.ok) throw new Error(`Contracts API: ${res.status}`)
         const data = await res.json()
@@ -555,6 +568,9 @@ export default function App() {
               <button className={`tab ${activeTab === 'opportunities' ? 'active' : ''}`} onClick={() => setActiveTab('opportunities')}>
                 Open Opportunities <span className="tab-count">{totalOpportunities.toLocaleString()}</span>
               </button>
+              <button className={`tab ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>
+                Pending Award <span className="tab-count">{totalPending.toLocaleString()}</span>
+              </button>
               <button className={`tab ${activeTab === 'contracts' ? 'active' : ''}`} onClick={() => setActiveTab('contracts')}>
                 Past Contracts <span className="tab-count">{totalContracts.toLocaleString()}</span>
               </button>
@@ -610,6 +626,63 @@ export default function App() {
                       <div style={{ textAlign: 'center', padding: 16 }}>
                         <button className="btn btn-navy" onClick={() => loadData(true)} disabled={loadingMore}>
                           {loadingMore ? 'Loading...' : `Load More (${opportunities.length} of ${totalOpportunities})`}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── Pending Award table ── */}
+            {activeTab === 'pending' && (
+              <>
+                {pendingOpportunities.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No pending opportunities match your search{hasActiveFilters && ' and filters'}.</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Opportunity <InfoIcon field="Agency" /></th>
+                            <th>Industry <InfoIcon field="NAICS" /></th>
+                            <th>Where <InfoIcon field="State" /></th>
+                            <th>Closed <InfoIcon field="Window" /></th>
+                            <th style={{ textAlign: 'right' }}>Value <InfoIcon field="EstValue" /></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pendingOpportunities.map(o => (
+                            <tr key={o.notice_id} onClick={() => openOpp(o)}>
+                              <td>
+                                <div className="row-title">{o.title || '—'}</div>
+                                <div className="row-meta">{topAgency(o.agency_name)}</div>
+                                {o.set_aside_type && <span className="badge badge-navy" style={{ marginTop: 3 }}>{expandSetAside(o.set_aside_type)}</span>}
+                              </td>
+                              <td>
+                                {o.naics_description
+                                  ? <span title={`${toTitleCase(o.naics_description)} (${o.naics_code})`}>{toTitleCase(o.naics_description).slice(0, 36)}{toTitleCase(o.naics_description).length > 36 ? '...' : ''}</span>
+                                  : <span className="text-muted">{o.naics_code || '—'}</span>
+                                }
+                              </td>
+                              <td>{stateName(o.place_of_performance_state)}</td>
+                              <td>
+                                <span className="text-muted">{o.response_deadline ? new Date(o.response_deadline).toLocaleDateString() : '—'}</span>
+                              </td>
+                              <td><div className="amount">{fmtOppValue(o)}</div></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {hasMorePending && (
+                      <div style={{ textAlign: 'center', padding: 16 }}>
+                        <button className="btn btn-navy" onClick={() => loadData(true)} disabled={loadingMore}>
+                          {loadingMore ? 'Loading...' : `Load More (${pendingOpportunities.length} of ${totalPending})`}
                         </button>
                       </div>
                     )}

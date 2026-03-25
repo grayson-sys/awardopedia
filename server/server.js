@@ -814,7 +814,17 @@ app.get('/api/opportunities', async (req, res) => {
     const { state, agency, naics, set_aside, q, data_source } = req.query
 
     // Build WHERE clauses
-    const conditions = ["(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)"] // Only open
+    // Status filter: open (default), pending (closed but not awarded), all
+    const status = req.query.status || 'open'
+    const conditions = []
+    if (status === 'open') {
+      conditions.push("(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)")
+    } else if (status === 'pending') {
+      // Closed (deadline passed) but not an award notice
+      conditions.push("response_deadline < CURRENT_DATE")
+      conditions.push("(notice_type IS NULL OR notice_type != 'a')")
+    }
+    // status === 'all' has no date filter
     const params = []
     let paramIdx = 1
 
