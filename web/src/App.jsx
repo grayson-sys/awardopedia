@@ -471,45 +471,27 @@ export default function App() {
           ═══════════════════════════════════════════════════════════════════ */}
       {view === 'results' && (
         <div className="results-page">
-          {/* Header bar (sticky) */}
-          <div className="results-header">
+          {/* Search bar */}
+          <div className="results-search-bar">
             <div className="container">
-              <div className="results-header-inner">
-                {/* Logo */}
-                <button className="results-logo" onClick={goHome}>
-                  <img src="/logo-icon-navy-clean.jpg" alt="Awardopedia" width={32} height={32} style={{ borderRadius: 6 }} />
-                  <span className="results-logo-text">Award<span>opedia</span></span>
+              <form className="results-search" onSubmit={e => { e.preventDefault(); loadData(false) }}>
+                <input
+                  type="text"
+                  placeholder="Search by keyword, notice ID, or solicitation number..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                />
+                <button type="submit" className="btn btn-navy btn-sm" disabled={loading}>
+                  {loading ? <span className="spinner" /> : 'Search'}
                 </button>
-
-                {/* Search */}
-                <form className="results-search" onSubmit={e => { e.preventDefault(); loadData(false) }}>
-                  <input
-                    type="text"
-                    placeholder="Search by keyword, notice ID, or solicitation number..."
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                  />
-                  <button type="submit" className="btn btn-navy btn-sm" disabled={loading}>
-                    {loading ? <span className="spinner" /> : 'Search'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-ghost btn-sm ${showFilters ? 'active' : ''}`}
-                    onClick={() => setShowFilters(!showFilters)}
-                  >
-                    Filters {hasActiveFilters && <span className="filter-dot" />}
-                  </button>
-                </form>
-
-                {/* Sign in */}
-                <div className="results-header-right">
-                  {user ? (
-                    <span style={{ color: '#6B7280', fontSize: 13 }}>{user.first_name || user.email?.split('@')[0]}</span>
-                  ) : (
-                    <a href="#" onClick={e => { e.preventDefault(); setView('auth') }} style={{ fontWeight: 600, color: '#1B3A6B', fontSize: 13 }}>Sign In</a>
-                  )}
-                </div>
-              </div>
+                <button
+                  type="button"
+                  className={`btn btn-ghost btn-sm ${showFilters ? 'active' : ''}`}
+                  onClick={() => setShowFilters(!showFilters)}
+                >
+                  Filters {hasActiveFilters && <span className="filter-dot" />}
+                </button>
+              </form>
             </div>
           </div>
 

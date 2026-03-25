@@ -247,24 +247,54 @@ app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
     if (!rows.length) return res.json({ success: true })
 
     const member = rows[0]
-    // Generate reset token (random 32 chars)
+    // Generate reset token (for link) and short code (for manual entry)
     const resetToken = randomBytes(16).toString('hex')
+    const resetCode = String(Math.floor(100000 + Math.random() * 900000)) // 6-digit code
     const expiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
 
     await pool.query(
-      'UPDATE members SET password_reset_token = $1, password_reset_expires = $2 WHERE id = $3',
-      [resetToken, expiry, member.id]
+      'UPDATE members SET password_reset_token = $1, password_reset_code = $2, password_reset_expires = $3 WHERE id = $4',
+      [resetToken, resetCode, expiry, member.id]
     )
 
-    // TODO: Send email with reset link
+    // TODO: Send email with reset link and code
     // For now, log it (check server logs to get reset links)
-    console.log(`[PASSWORD RESET] ${member.email} → token: ${resetToken}`)
+    console.log(`[PASSWORD RESET] ${member.email} → token: ${resetToken}, code: ${resetCode}`)
     console.log(`[PASSWORD RESET] Link: https://awardopedia.com/reset-password?token=${resetToken}`)
 
-    res.json({ success: true })
+    res.json({ success: true, code: resetCode })
   } catch (e) {
     console.error('Forgot password error:', e)
     res.status(500).json({ error: 'Failed to process request' })
+  }
+})
+
+// ─── Reset password with code ─────────────────────────────
+app.post('/api/auth/reset-password', express.json(), async (req, res) => {
+  const { code, password } = req.body
+  if (!code || !password) return res.status(400).json({ error: 'Code and password required' })
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email FROM members WHERE password_reset_code = $1 AND password_reset_expires > NOW() AND is_active = true',
+      [code]
+    )
+    if (!rows.length) return res.status(400).json({ error: 'Invalid or expired code' })
+
+    const member = rows[0]
+    const hash = hashPassword(password)
+
+    await pool.query(
+      'UPDATE members SET password_hash = $1, password_reset_token = NULL, password_reset_code = NULL, password_reset_expires = NULL WHERE id = $2',
+      [hash, member.id]
+    )
+
+    console.log(`[PASSWORD RESET] Complete for ${member.email}`)
+    res.json({ success: true })
+  } catch (e) {
+    console.error('Reset password error:', e)
+    res.status(500).json({ error: 'Failed to reset password' })
   }
 })
 

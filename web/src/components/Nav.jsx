@@ -17,14 +17,14 @@ export default function Nav({ activePage, user, onHome, onNavigate }) {
         <button onClick={() => onNavigate?.('api')}>API</button>
         {user ? (
           <>
-            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>|</span>
+            <span style={{ color: '#E2E4E9', fontSize: 12 }}>|</span>
             {user.role === 'admin' && <button onClick={() => onNavigate?.('admin')}>Admin</button>}
             <button onClick={() => onNavigate?.('credits')} style={{ fontSize: 12 }}>{user.credits ?? 0} credits</button>
-            <button style={{ color: '#E9A820' }}>{user.first_name || user.email?.split('@')[0]}</button>
+            <button style={{ color: '#1B3A6B', fontWeight: 600 }}>{user.first_name || user.email?.split('@')[0]}</button>
             <button onClick={() => onNavigate?.('logout')} style={{ fontSize: 12, opacity: 0.6 }}>Logout</button>
           </>
         ) : (
-          <button onClick={() => onNavigate?.('auth')} style={{ color: '#E9A820' }}>Sign In</button>
+          <button onClick={() => onNavigate?.('auth')} style={{ color: '#1B3A6B', fontWeight: 600 }}>Sign In</button>
         )}
       </div>
     </nav>

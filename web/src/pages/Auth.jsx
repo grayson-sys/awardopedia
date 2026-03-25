@@ -1,9 +1,12 @@
 import { useState } from 'react'
 
 export default function Auth({ onLogin }) {
-  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot' | 'reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [resetCode, setResetCode] = useState('')
+  const [displayCode, setDisplayCode] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [profession, setProfession] = useState('')
@@ -13,6 +16,7 @@ export default function Auth({ onLogin }) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [resetSent, setResetSent] = useState(false)
+  const [resetComplete, setResetComplete] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -27,7 +31,19 @@ export default function Auth({ onLogin }) {
         })
         const data = await res.json()
         if (!res.ok || data.error) throw new Error(data.error)
+        setDisplayCode(data.code || '')
         setResetSent(true)
+        return
+      }
+      if (mode === 'reset') {
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: resetCode, password: newPassword })
+        })
+        const data = await res.json()
+        if (!res.ok || data.error) throw new Error(data.error)
+        setResetComplete(true)
         return
       }
       const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register'
@@ -131,16 +147,54 @@ export default function Auth({ onLogin }) {
           )}
 
           {mode === 'forgot' && resetSent && (
-            <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5 }}>
-              Check your email for a password reset link. If you don't see it, check your spam folder.
+            <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
+              {displayCode ? (
+                <>
+                  <div style={{ marginBottom: 12 }}>Your reset code:</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 4, fontFamily: 'monospace', color: '#1B3A6B' }}>{displayCode}</div>
+                  <div style={{ marginTop: 12, fontSize: 12, color: '#6B7280' }}>Enter this code below to set a new password</div>
+                </>
+              ) : (
+                <>Check your email for a password reset link.</>
+              )}
+            </div>
+          )}
+
+          {mode === 'forgot' && resetSent && displayCode && (
+            <button
+              type="button"
+              className="btn btn-navy"
+              style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15, marginTop: 8 }}
+              onClick={() => { setMode('reset'); setResetCode(displayCode); setError(null) }}
+            >
+              Reset Password Now
+            </button>
+          )}
+
+          {mode === 'reset' && !resetComplete && (
+            <>
+              <div>
+                <label style={labelStyle}>Reset Code</label>
+                <input type="text" value={resetCode} onChange={e => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))} style={{ ...inputStyle, fontFamily: 'monospace', letterSpacing: 4, textAlign: 'center', fontSize: 18 }} placeholder="000000" required maxLength={6} />
+              </div>
+              <div>
+                <label style={labelStyle}>New Password</label>
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={inputStyle} required minLength={8} />
+              </div>
+            </>
+          )}
+
+          {mode === 'reset' && resetComplete && (
+            <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
+              Password reset successfully! You can now sign in.
             </div>
           )}
 
           {error && <div style={{ color: '#B91C1C', fontSize: 13 }}>{error}</div>}
 
-          {!(mode === 'forgot' && resetSent) && (
+          {!(mode === 'forgot' && resetSent) && !(mode === 'reset' && resetComplete) && (
             <button type="submit" className="btn btn-navy" style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15 }} disabled={loading}>
-              {loading ? 'Working...' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Send Reset Link'}
+              {loading ? 'Working...' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'reset' ? 'Set New Password' : 'Send Reset Code'}
             </button>
           )}
         </form>
