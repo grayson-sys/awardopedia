@@ -248,7 +248,7 @@ app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
 
     const member = rows[0]
     // Generate reset token (random 32 chars)
-    const resetToken = require('crypto').randomBytes(16).toString('hex')
+    const resetToken = randomBytes(16).toString('hex')
     const expiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
 
     await pool.query(
