@@ -254,10 +254,11 @@ export default function App() {
   // Load data when on results view, or when filters/tabs change
   useEffect(() => {
     // Only load data if we're in results view (not home)
+    // Note: query changes don't auto-trigger - user must click Search or press Enter
     if (view === 'results') {
       loadData(false)
     }
-  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, query])
+  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource])
 
   // Deep-link support (on mount only)
   useEffect(() => {
@@ -473,14 +474,17 @@ export default function App() {
           {/* Search bar (sticky) */}
           <div className="results-search-bar">
             <div className="container">
-              <form className="results-search" onSubmit={e => e.preventDefault()}>
+              <form className="results-search" onSubmit={e => { e.preventDefault(); loadData(false) }}>
                 <input
                   type="text"
-                  placeholder="Search..."
+                  placeholder="Search by keyword, notice ID, or solicitation number..."
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   autoFocus
                 />
+                <button type="submit" className="btn btn-navy btn-sm" disabled={loading}>
+                  {loading ? <span className="spinner" /> : 'Search'}
+                </button>
                 <button
                   type="button"
                   className={`btn btn-ghost btn-sm ${showFilters ? 'active' : ''}`}
@@ -534,9 +538,14 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                {hasActiveFilters && (
-                  <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear all filters</button>
-                )}
+                <div className="filters-actions mt-8">
+                  <button className="btn btn-navy btn-sm" onClick={() => loadData(false)} disabled={loading}>
+                    {loading ? <span className="spinner" /> : 'Apply Filters'}
+                  </button>
+                  {hasActiveFilters && (
+                    <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear all</button>
+                  )}
+                </div>
               </div>
             </div>
           )}

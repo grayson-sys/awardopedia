@@ -177,9 +177,20 @@ function ReportModal({ opp, onClose, token }) {
                   <p style={{ color: '#6B7280', marginBottom: 16, fontSize: 14 }}>
                     This report analyzes the full solicitation package including all attached documents, evaluation criteria, and competitive factors.
                   </p>
-                  <button className="btn btn-amber" style={{ fontSize: 16, padding: '14px 32px' }} onClick={() => startGeneration(false)}>
-                    Generate Report
-                  </button>
+                  {token ? (
+                    <button className="btn btn-amber" style={{ fontSize: 16, padding: '14px 32px' }} onClick={() => startGeneration(false)}>
+                      Generate Report
+                    </button>
+                  ) : (
+                    <div style={{ textAlign: 'center' }}>
+                      <p style={{ color: '#6B7280', fontSize: 13, marginBottom: 12 }}>
+                        Sign in to generate AI intelligence reports.
+                      </p>
+                      <button className="btn btn-navy" style={{ fontSize: 14, padding: '12px 24px' }} onClick={onClose}>
+                        Close
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
