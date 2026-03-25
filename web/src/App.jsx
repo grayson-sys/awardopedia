@@ -492,6 +492,13 @@ export default function App() {
                 >
                   Filters {hasActiveFilters && <span className="filter-dot" />}
                 </button>
+                <div style={{ marginLeft: 'auto', fontSize: 13 }}>
+                  {user ? (
+                    <span style={{ color: '#6B7280' }}>{user.first_name || user.email?.split('@')[0]}</span>
+                  ) : (
+                    <a href="#" onClick={e => { e.preventDefault(); setView('auth') }} style={{ fontWeight: 600, color: '#1B3A6B' }}>Sign In</a>
+                  )}
+                </div>
               </form>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 export default function Auth({ onLogin }) {
-  const [mode, setMode] = useState('login') // 'login' | 'register'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [firstName, setFirstName] = useState('')
@@ -12,12 +12,24 @@ export default function Auth({ onLogin }) {
   const [companyState, setCompanyState] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
+      if (mode === 'forgot') {
+        const res = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        })
+        const data = await res.json()
+        if (!res.ok || data.error) throw new Error(data.error)
+        setResetSent(true)
+        return
+      }
       const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register'
       const body = mode === 'login'
         ? { email, password }
@@ -46,7 +58,7 @@ export default function Auth({ onLogin }) {
           <span style={{ fontSize: 24, fontWeight: 700, color: '#1B3A6B' }}>Award<span style={{ color: '#E9A820' }}>opedia</span></span>
         </div>
         <p style={{ color: '#6B7280', fontSize: 14 }}>
-          {mode === 'login' ? 'Sign in to your account' : 'Create your free account'}
+          {mode === 'login' ? 'Sign in to your account' : mode === 'register' ? 'Create your free account' : 'Reset your password'}
         </p>
       </div>
 
@@ -106,23 +118,40 @@ export default function Auth({ onLogin }) {
             <label style={labelStyle}>Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required autoFocus />
           </div>
-          <div>
-            <label style={labelStyle}>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} required minLength={8} />
-          </div>
+          {mode !== 'forgot' && (
+            <div>
+              <label style={labelStyle}>Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} required minLength={8} />
+              {mode === 'login' && (
+                <div style={{ textAlign: 'right', marginTop: 6 }}>
+                  <a href="#" onClick={e => { e.preventDefault(); setMode('forgot'); setError(null); setResetSent(false) }} style={{ fontSize: 12, color: '#6B7280' }}>Forgot password?</a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mode === 'forgot' && resetSent && (
+            <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5 }}>
+              Check your email for a password reset link. If you don't see it, check your spam folder.
+            </div>
+          )}
 
           {error && <div style={{ color: '#B91C1C', fontSize: 13 }}>{error}</div>}
 
-          <button type="submit" className="btn btn-navy" style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15 }} disabled={loading}>
-            {loading ? 'Working...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-          </button>
+          {!(mode === 'forgot' && resetSent) && (
+            <button type="submit" className="btn btn-navy" style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 15 }} disabled={loading}>
+              {loading ? 'Working...' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Send Reset Link'}
+            </button>
+          )}
         </form>
 
         <div style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#6B7280' }}>
           {mode === 'login' ? (
             <>Don't have an account? <a href="#" onClick={e => { e.preventDefault(); setMode('register'); setError(null) }} style={{ color: '#1B3A6B', fontWeight: 600 }}>Sign up free</a></>
-          ) : (
+          ) : mode === 'register' ? (
             <>Already have an account? <a href="#" onClick={e => { e.preventDefault(); setMode('login'); setError(null) }} style={{ color: '#1B3A6B', fontWeight: 600 }}>Sign in</a></>
+          ) : (
+            <><a href="#" onClick={e => { e.preventDefault(); setMode('login'); setError(null); setResetSent(false) }} style={{ color: '#1B3A6B', fontWeight: 600 }}>Back to sign in</a></>
           )}
         </div>
       </div>

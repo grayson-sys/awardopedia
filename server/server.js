@@ -233,6 +233,41 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
   }
 })
 
+// ─── Forgot password ──────────────────────────────────────
+app.post('/api/auth/forgot-password', express.json(), async (req, res) => {
+  const { email } = req.body
+  if (!email) return res.status(400).json({ error: 'Email required' })
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email, first_name FROM members WHERE email = $1 AND is_active = true',
+      [email.toLowerCase().trim()]
+    )
+    // Always return success to avoid email enumeration
+    if (!rows.length) return res.json({ success: true })
+
+    const member = rows[0]
+    // Generate reset token (random 32 chars)
+    const resetToken = require('crypto').randomBytes(16).toString('hex')
+    const expiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+    await pool.query(
+      'UPDATE members SET password_reset_token = $1, password_reset_expires = $2 WHERE id = $3',
+      [resetToken, expiry, member.id]
+    )
+
+    // TODO: Send email with reset link
+    // For now, log it (check server logs to get reset links)
+    console.log(`[PASSWORD RESET] ${member.email} → token: ${resetToken}`)
+    console.log(`[PASSWORD RESET] Link: https://awardopedia.com/reset-password?token=${resetToken}`)
+
+    res.json({ success: true })
+  } catch (e) {
+    console.error('Forgot password error:', e)
+    res.status(500).json({ error: 'Failed to process request' })
+  }
+})
+
 // ─── Get current user ─────────────────────────────────────
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
