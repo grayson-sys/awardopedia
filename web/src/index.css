@@ -166,6 +166,43 @@ a:hover { text-decoration: underline; }
 .home-footer a { color: var(--color-navy); }
 
 /* ── Results page ────────────────────────────────────────────────────────── */
+.results-header {
+  background: var(--color-white);
+  border-bottom: 3px solid var(--color-navy);
+  padding: 12px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.results-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.results-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.results-logo-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-navy);
+  letter-spacing: -0.8px;
+}
+.results-logo-text span {
+  color: var(--color-amber);
+}
+.results-header-right {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .results-search-bar {
   background: var(--color-white);
   border-bottom: 1px solid var(--color-border);
@@ -848,7 +885,7 @@ a:hover { text-decoration: underline; }
   .report-modal-overlay ~ *, body > div > :not(:has(.report-modal-overlay)) {
     display: none !important;
   }
-  .nav, .tabs, .footer, .back-btn, .results-search-bar, .filters-panel, .home,
+  .nav, .tabs, .footer, .back-btn, .results-header, .results-search-bar, .filters-panel, .home,
   .detail-layout > :last-child /* sidebar */ {
     display: none !important;
   }
