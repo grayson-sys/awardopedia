@@ -782,9 +782,9 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               <button
                 className="btn btn-amber"
                 style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setShowReport(true)}
+                onClick={() => token ? setShowReport(true) : onSignIn && onSignIn()}
               >
-                Open Report
+                {token ? 'Generate Report' : 'Sign In to Generate Report'}
               </button>
             </div>
 
