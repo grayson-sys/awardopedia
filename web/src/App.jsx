@@ -566,13 +566,13 @@ export default function App() {
             {/* Tabs */}
             <div className="tabs">
               <button className={`tab ${activeTab === 'opportunities' ? 'active' : ''}`} onClick={() => setActiveTab('opportunities')}>
-                Open Opportunities <span className="tab-count">{totalOpportunities.toLocaleString()}</span>
+                Open Opportunities {totalOpportunities > 0 && <span className="tab-count">{totalOpportunities.toLocaleString()}</span>}
               </button>
               <button className={`tab ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>
-                Pending Award <span className="tab-count">{totalPending.toLocaleString()}</span>
+                Pending Award {totalPending > 0 && <span className="tab-count">{totalPending.toLocaleString()}</span>}
               </button>
               <button className={`tab ${activeTab === 'contracts' ? 'active' : ''}`} onClick={() => setActiveTab('contracts')}>
-                Past Contracts <span className="tab-count">{totalContracts.toLocaleString()}</span>
+                Past Contracts {totalContracts > 0 && <span className="tab-count">{totalContracts.toLocaleString()}</span>}
               </button>
             </div>
 
