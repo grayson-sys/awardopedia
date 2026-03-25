@@ -721,6 +721,7 @@ export default function App() {
           user={user}
           token={token}
           onBuyCredits={() => setView('credits')}
+          onSignIn={() => setView('auth')}
           onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
         />
       )}

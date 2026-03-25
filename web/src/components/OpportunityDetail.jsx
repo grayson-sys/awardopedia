@@ -82,7 +82,7 @@ function RenderProse({ text }) {
 
 // ── Report modal — full-page overlay with cover page + spinning ─────────────
 
-function ReportModal({ opp, onClose, token }) {
+function ReportModal({ opp, onClose, token, onSignIn }) {
   const [status, setStatus] = useState('ready') // ready | generating | done | error
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
@@ -182,14 +182,9 @@ function ReportModal({ opp, onClose, token }) {
                       Generate Report
                     </button>
                   ) : (
-                    <div style={{ textAlign: 'center' }}>
-                      <p style={{ color: '#6B7280', fontSize: 13, marginBottom: 12 }}>
-                        Sign in to generate AI intelligence reports.
-                      </p>
-                      <button className="btn btn-navy" style={{ fontSize: 14, padding: '12px 24px' }} onClick={onClose}>
-                        Close
-                      </button>
-                    </div>
+                    <button className="btn btn-amber" style={{ fontSize: 16, padding: '14px 32px' }} onClick={() => { onClose(); onSignIn && onSignIn() }}>
+                      Sign In to Generate Report
+                    </button>
                   )}
                 </div>
               )}
@@ -446,7 +441,7 @@ function DocTile({ att, index }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredits }) {
+export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredits, onSignIn }) {
   const days = daysUntil(opp.response_deadline)
   const { agency, office: subAgency } = parseAgencyHierarchy(opp.agency_name)
   const [showReport, setShowReport] = useState(false)
@@ -455,7 +450,7 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
 
   return (
     <div>
-      {showReport && <ReportModal opp={opp} token={token} onClose={() => setShowReport(false)} />}
+      {showReport && <ReportModal opp={opp} token={token} onClose={() => setShowReport(false)} onSignIn={onSignIn} />}
 
       <div className="detail-header">
         <div className="container">
