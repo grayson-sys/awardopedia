@@ -820,8 +820,9 @@ app.get('/api/opportunities', async (req, res) => {
     if (status === 'open') {
       conditions.push("(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)")
     } else if (status === 'pending') {
-      // Closed (deadline passed) but not an award notice
+      // Closed (deadline passed) within last 90 days, not an award notice
       conditions.push("response_deadline < CURRENT_DATE")
+      conditions.push("response_deadline >= CURRENT_DATE - INTERVAL '90 days'")
       conditions.push("(notice_type IS NULL OR notice_type != 'a')")
     }
     // status === 'all' has no date filter
