@@ -509,7 +509,7 @@ Return ONLY the Python code snippet, no explanation. If you can't write a safe d
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4',
+          model: 'claude-sonnet-4-6',
           max_tokens: 500,
           messages: [{ role: 'user', content: rulePrompt }]
         })
@@ -1323,7 +1323,7 @@ app.post('/api/reports/generate', reportRateLimit, requireApiKey, async (req, re
     // Generate with Claude
     const prompt = buildContractPrompt(contract)
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2500,
       temperature: 0,   // deterministic
       system: REPORT_SYSTEM_PROMPT,
@@ -1536,7 +1536,7 @@ app.post('/api/reports/generate-opportunity', reportRateLimit, requireApiKey, as
     // Generate with Claude
     const prompt = buildOpportunityPrompt(opp)
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2500,
       temperature: 0,
       system: OPP_REPORT_SYSTEM_PROMPT,
@@ -1611,7 +1611,7 @@ app.post('/api/member/reports/generate', authMiddleware, async (req, res) => {
     // Generate with Claude
     const prompt = buildContractPrompt(rows[0])
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2500,
       temperature: 0,
       system: REPORT_SYSTEM_PROMPT,
@@ -1692,7 +1692,7 @@ app.post('/api/member/reports/generate-opportunity', authMiddleware, async (req,
     // Generate with Claude
     const prompt = buildOpportunityPrompt(rows[0])
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4000,
       temperature: 0,
       system: OPP_REPORT_SYSTEM_PROMPT,
@@ -1838,7 +1838,7 @@ app.post('/api/reports/generate-opportunity-dev', async (req, res) => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         messages: [
           { role: 'system', content: OPP_REPORT_SYSTEM_PROMPT },
@@ -1939,7 +1939,7 @@ Return ONLY a JSON object with the field names as keys. No markdown.`
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4',
+        model: 'claude-sonnet-4-6',
         max_tokens: 512,
         messages: [{ role: 'user', content: prompt }]
       })
