@@ -3,7 +3,7 @@ export default function Nav({ activePage, user, onHome, onNavigate }) {
     <nav className="nav">
       <button className="nav-logo" onClick={onHome}>
         <img src="/logo-icon-navy-clean.jpg" alt="" width={24} height={24} style={{ borderRadius: 4 }} />
-        Award<span>opedia</span>
+        <span className="nav-logo-text">Award<span>opedia</span></span>
       </button>
       <div className="nav-links">
         <button

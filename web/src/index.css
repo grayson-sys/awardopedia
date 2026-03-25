@@ -43,7 +43,8 @@ a:hover { text-decoration: underline; }
   gap: 10px;
   padding: 0;
 }
-.nav-logo span { color: var(--color-amber); letter-spacing: -0.8px; }
+.nav-logo-text { color: var(--color-navy); }
+.nav-logo-text span { color: var(--color-amber); }
 .nav-links { display: flex; gap: 24px; align-items: center; }
 .nav-links button {
   color: var(--color-muted);
