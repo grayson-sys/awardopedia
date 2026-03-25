@@ -779,10 +779,12 @@ app.get('/api/opportunities', async (req, res) => {
     }
     if (q) {
       conditions.push(`(
-        title ILIKE $${paramIdx} OR
-        agency_name ILIKE $${paramIdx} OR
-        description ILIKE $${paramIdx} OR
-        o.naics_description ILIKE $${paramIdx}
+        o.title ILIKE $${paramIdx} OR
+        o.agency_name ILIKE $${paramIdx} OR
+        o.description ILIKE $${paramIdx} OR
+        o.naics_description ILIKE $${paramIdx} OR
+        o.notice_id ILIKE $${paramIdx} OR
+        o.solicitation_number ILIKE $${paramIdx}
       )`)
       params.push(`%${q}%`)
       paramIdx++
