@@ -1,0 +1,41 @@
+{
+  "name": "awardopedia-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for searching federal contract opportunities via Awardopedia",
+  "keywords": [
+    "mcp",
+    "claude",
+    "federal contracts",
+    "government",
+    "SAM.gov",
+    "procurement",
+    "small business",
+    "contracting"
+  ],
+  "author": "Awardopedia <api@awardopedia.com>",
+  "license": "MIT",
+  "homepage": "https://awardopedia.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awardopedia/mcp-server"
+  },
+  "type": "module",
+  "bin": {
+    "awardopedia-mcp": "./bin/cli.js"
+  },
+  "main": "src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
