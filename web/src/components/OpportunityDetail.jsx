@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react'
 import InfoIcon from './InfoIcon'
 import { parseAgencyHierarchy } from '../utils/agencyNorm'
 import { fmtAddress } from '../utils/fmtAddress'
@@ -445,8 +445,49 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
   const days = daysUntil(opp.response_deadline)
   const { agency, office: subAgency } = parseAgencyHierarchy(opp.agency_name)
   const [showReport, setShowReport] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
+  const [savingOpp, setSavingOpp] = useState(false)
 
   const hasPdfs = Array.isArray(opp.attachments) && opp.attachments.some(a => !a.type || a.type === 'file')
+
+  // Check if already saved
+  useEffect(() => {
+    if (token && opp.notice_id) {
+      fetch('/api/saved', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(saved => {
+          if (Array.isArray(saved)) {
+            setIsSaved(saved.some(s => s.notice_id === opp.notice_id))
+          }
+        })
+        .catch(() => {})
+    }
+  }, [token, opp.notice_id])
+
+  const handleSave = async () => {
+    if (!token) {
+      onSignIn?.()
+      return
+    }
+    setSavingOpp(true)
+    try {
+      if (isSaved) {
+        await fetch(`/api/saved/${opp.notice_id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        setIsSaved(false)
+      } else {
+        await fetch('/api/saved', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ notice_id: opp.notice_id })
+        })
+        setIsSaved(true)
+      }
+    } catch (e) { console.error(e) }
+    setSavingOpp(false)
+  }
 
   return (
     <div>
@@ -454,9 +495,20 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
 
       <div className="detail-header">
         <div className="container">
-          <button className="back-btn" onClick={onBack}>
-            <ArrowLeft size={14} /> Back to opportunities
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button className="back-btn" onClick={onBack}>
+              <ArrowLeft size={14} /> Back to opportunities
+            </button>
+            <button
+              className={`btn ${isSaved ? 'btn-amber' : 'btn-ghost'}`}
+              onClick={handleSave}
+              disabled={savingOpp}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              {isSaved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+              {isSaved ? 'Saved' : 'Save'}
+            </button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1>{opp.title}</h1>
             {opp.is_recompete && <span className="badge badge-amber">RECOMPETE</span>}

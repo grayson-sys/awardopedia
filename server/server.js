@@ -397,6 +397,227 @@ app.get('/api/watched-contracts', authMiddleware, async (req, res) => {
   } catch (e) { res.json([]) }
 })
 
+// ═══════════════════════════════════════════════════════════════════
+// SAVED OPPORTUNITIES + LISTS
+// Organize opportunities into custom lists with status tracking
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Get user's lists ───────────────────────────────────────
+app.get('/api/lists', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.*, COUNT(s.id) AS opportunity_count
+       FROM opportunity_lists l
+       LEFT JOIN saved_opportunities s ON l.id = s.list_id
+       WHERE l.member_id = $1
+       GROUP BY l.id
+       ORDER BY l.is_default DESC, l.sort_order, l.name`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Create a list ───────────────────────────────────────────
+app.post('/api/lists', authMiddleware, express.json(), async (req, res) => {
+  const { name, color, icon } = req.body
+  if (!name) return res.status(400).json({ error: 'name required' })
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO opportunity_lists (member_id, name, color, icon)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.user.id, name.trim(), color || '#1B3A6B', icon || 'folder']
+    )
+    res.json(rows[0])
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'List name already exists' })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Update a list ───────────────────────────────────────────
+app.put('/api/lists/:id', authMiddleware, express.json(), async (req, res) => {
+  const { name, color, icon, sort_order } = req.body
+  try {
+    const { rows } = await pool.query(
+      `UPDATE opportunity_lists SET name = COALESCE($1, name), color = COALESCE($2, color),
+       icon = COALESCE($3, icon), sort_order = COALESCE($4, sort_order)
+       WHERE id = $5 AND member_id = $6 RETURNING *`,
+      [name, color, icon, sort_order, req.params.id, req.user.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'List not found' })
+    res.json(rows[0])
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Delete a list ───────────────────────────────────────────
+app.delete('/api/lists/:id', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM opportunity_lists WHERE id = $1 AND member_id = $2 AND is_default = false RETURNING id',
+      [req.params.id, req.user.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Cannot delete default list' })
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Get saved opportunities (all or by list) ────────────────
+app.get('/api/saved', authMiddleware, async (req, res) => {
+  const { list_id, status } = req.query
+  try {
+    let query = `
+      SELECT s.*, l.name AS list_name, l.color AS list_color,
+             o.title, o.agency_name, o.response_deadline, o.set_aside_type,
+             o.naics_code, o.naics_description, o.llama_summary,
+             o.place_of_performance_city, o.place_of_performance_state
+      FROM saved_opportunities s
+      JOIN opportunity_lists l ON s.list_id = l.id
+      JOIN opportunities o ON s.notice_id = o.notice_id
+      WHERE s.member_id = $1
+    `
+    const params = [req.user.id]
+    if (list_id) { query += ` AND s.list_id = $2`; params.push(list_id) }
+    if (status) { query += ` AND s.status = $${params.length + 1}`; params.push(status) }
+    query += ' ORDER BY s.saved_at DESC'
+
+    const { rows } = await pool.query(query, params)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Save an opportunity to a list ───────────────────────────
+app.post('/api/saved', authMiddleware, express.json(), async (req, res) => {
+  const { notice_id, list_id, notes, priority, status } = req.body
+  if (!notice_id) return res.status(400).json({ error: 'notice_id required' })
+
+  try {
+    // If no list specified, use or create default "Saved" list
+    let targetListId = list_id
+    if (!targetListId) {
+      const { rows: listRows } = await pool.query(
+        `INSERT INTO opportunity_lists (member_id, name, is_default)
+         VALUES ($1, 'Saved', true)
+         ON CONFLICT (member_id, name) DO UPDATE SET is_default = true
+         RETURNING id`,
+        [req.user.id]
+      )
+      targetListId = listRows[0].id
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO saved_opportunities (member_id, notice_id, list_id, notes, priority, status)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (member_id, notice_id, list_id) DO UPDATE SET
+         notes = COALESCE(EXCLUDED.notes, saved_opportunities.notes),
+         priority = COALESCE(EXCLUDED.priority, saved_opportunities.priority),
+         status = COALESCE(EXCLUDED.status, saved_opportunities.status)
+       RETURNING *`,
+      [req.user.id, notice_id, targetListId, notes || null, priority || 'medium', status || 'watching']
+    )
+    res.json(rows[0])
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Update saved opportunity (notes, status, priority) ──────
+app.put('/api/saved/:id', authMiddleware, express.json(), async (req, res) => {
+  const { notes, priority, status, list_id } = req.body
+  try {
+    const { rows } = await pool.query(
+      `UPDATE saved_opportunities SET
+         notes = COALESCE($1, notes),
+         priority = COALESCE($2, priority),
+         status = COALESCE($3, status),
+         list_id = COALESCE($4, list_id)
+       WHERE id = $5 AND member_id = $6 RETURNING *`,
+      [notes, priority, status, list_id, req.params.id, req.user.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Not found' })
+    res.json(rows[0])
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Remove from saved ───────────────────────────────────────
+app.delete('/api/saved/:notice_id', authMiddleware, async (req, res) => {
+  const { list_id } = req.query
+  try {
+    if (list_id) {
+      await pool.query(
+        'DELETE FROM saved_opportunities WHERE member_id = $1 AND notice_id = $2 AND list_id = $3',
+        [req.user.id, req.params.notice_id, list_id]
+      )
+    } else {
+      await pool.query(
+        'DELETE FROM saved_opportunities WHERE member_id = $1 AND notice_id = $2',
+        [req.user.id, req.params.notice_id]
+      )
+    }
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Get matched opportunities (smart recommendations) ───────
+app.get('/api/matches', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT m.*, o.title, o.agency_name, o.response_deadline, o.set_aside_type,
+              o.naics_code, o.naics_description, o.llama_summary,
+              o.place_of_performance_city, o.place_of_performance_state
+       FROM opportunity_matches m
+       JOIN opportunities o ON m.notice_id = o.notice_id
+       WHERE m.member_id = $1 AND o.response_deadline > NOW()
+       ORDER BY m.match_score DESC, m.created_at DESC
+       LIMIT 50`,
+      [req.user.id]
+    )
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Enhanced profile with business description ──────────────
+app.get('/api/profile', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, email, first_name, last_name, profession,
+              company_name, company_size, company_state, company_naics, company_uei,
+              company_description, company_capabilities, company_certifications, company_past_performance,
+              alerts_enabled, alert_naics, alert_states, alert_set_asides, alert_keywords,
+              alert_min_value, alert_max_value, alert_frequency,
+              credits, role, created_at
+       FROM members WHERE id = $1`,
+      [req.user.id]
+    )
+    if (!rows.length) return res.status(404).json({ error: 'User not found' })
+    res.json(rows[0])
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.put('/api/profile', authMiddleware, express.json(), async (req, res) => {
+  const allowed = [
+    'first_name', 'last_name', 'profession',
+    'company_name', 'company_size', 'company_state', 'company_naics', 'company_uei',
+    'company_description', 'company_capabilities', 'company_certifications', 'company_past_performance',
+    'alerts_enabled', 'alert_naics', 'alert_states', 'alert_set_asides', 'alert_keywords',
+    'alert_min_value', 'alert_max_value', 'alert_frequency'
+  ]
+  const updates = []
+  const values = []
+  let idx = 1
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) {
+      updates.push(`${key} = $${idx}`)
+      values.push(typeof req.body[key] === 'object' ? JSON.stringify(req.body[key]) : req.body[key])
+      idx++
+    }
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No fields to update' })
+  values.push(req.user.id)
+  try {
+    await pool.query(`UPDATE members SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`, values)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── My reports (purchased) ───────────────────────────────
 app.get('/api/my-reports', authMiddleware, async (req, res) => {
   try {

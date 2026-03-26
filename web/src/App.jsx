@@ -9,6 +9,7 @@ import Admin from './pages/Admin'
 import Auth from './pages/Auth'
 import Credits from './pages/Credits'
 import Jurisdictions from './pages/Jurisdictions'
+import Dashboard from './pages/Dashboard'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -953,6 +954,7 @@ export default function App() {
       {view === 'admin' && <Admin onBack={goHome} onJurisdictions={() => setView('jurisdictions')} />}
       {view === 'jurisdictions' && <Jurisdictions onBack={() => setView('admin')} />}
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
+      {view === 'dashboard' && <Dashboard user={user} token={token} onBack={goHome} />}
       {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
     </div>
   )

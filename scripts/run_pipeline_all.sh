@@ -41,4 +41,11 @@ echo "----------------------------------------------"
 python3 scripts/name_pdfs_llama.py 2>&1 | tee -a logs/pipeline_batch_$(date +%Y%m%d).log
 
 echo ""
+echo "Matching opportunities to member profiles..."
+echo "----------------------------------------------"
+
+# Match new opportunities to members and queue email notifications
+python3 scripts/match_opportunities.py 2>&1 | tee -a logs/pipeline_batch_$(date +%Y%m%d).log
+
+echo ""
 echo "Pipeline batch complete at $(date)"

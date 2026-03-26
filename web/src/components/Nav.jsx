@@ -19,8 +19,9 @@ export default function Nav({ activePage, user, onHome, onNavigate }) {
           <>
             <span style={{ color: '#E2E4E9', fontSize: 12 }}>|</span>
             {user.role === 'admin' && <button onClick={() => onNavigate?.('admin')}>Admin</button>}
+            <button onClick={() => onNavigate?.('dashboard')}>My Dashboard</button>
             <button onClick={() => onNavigate?.('credits')} style={{ fontSize: 12 }}>{user.credits ?? 0} credits</button>
-            <button style={{ color: '#1B3A6B', fontWeight: 600 }}>{user.first_name || user.email?.split('@')[0]}</button>
+            <button onClick={() => onNavigate?.('dashboard')} style={{ color: '#1B3A6B', fontWeight: 600 }}>{user.first_name || user.email?.split('@')[0]}</button>
             <button onClick={() => onNavigate?.('logout')} style={{ fontSize: 12, opacity: 0.6 }}>Logout</button>
           </>
         ) : (
