@@ -42,20 +42,26 @@ export default function Dashboard({ user, token, onBack }) {
   const [newListName, setNewListName] = useState('')
 
   useEffect(() => {
-    if (token) {
-      Promise.all([
-        fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-        fetch('/api/matches', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-        fetch('/api/saved', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-        fetch('/api/lists', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      ]).then(([p, m, s, l]) => {
-        setProfile(p)
-        setMatches(m || [])
-        setSaved(s || [])
-        setLists(l || [])
-        setLoading(false)
-      }).catch(() => setLoading(false))
+    if (!token) {
+      setLoading(false)
+      return
     }
+    const headers = { Authorization: `Bearer ${token}` }
+    Promise.all([
+      fetch('/api/profile', { headers }).then(r => r.ok ? r.json() : null),
+      fetch('/api/matches', { headers }).then(r => r.ok ? r.json() : []),
+      fetch('/api/saved', { headers }).then(r => r.ok ? r.json() : []),
+      fetch('/api/lists', { headers }).then(r => r.ok ? r.json() : []),
+    ]).then(([p, m, s, l]) => {
+      setProfile(p)
+      setMatches(m || [])
+      setSaved(s || [])
+      setLists(l || [])
+      setLoading(false)
+    }).catch((e) => {
+      console.error('Dashboard load error:', e)
+      setLoading(false)
+    })
   }, [token])
 
   const updateProfile = async (updates) => {
