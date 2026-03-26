@@ -162,7 +162,7 @@ export default function Dashboard({ user, token, onBack }) {
           <div>
             <div className="card" style={{ marginBottom: 24 }}>
               <p style={{ margin: 0, color: '#374151' }}>
-                <strong style={{ color: '#1B3A6B' }}>Better than TikTok at serving you opportunities.</strong><br/>
+                <strong style={{ color: '#1B3A6B' }}>Finally, a good use for an algorithm.</strong><br/>
                 We analyze every new federal opportunity against your business profile and surface the best matches.
                 Set up your profile and alert preferences to get started.
               </p>

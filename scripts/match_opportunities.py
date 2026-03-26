@@ -4,7 +4,7 @@ match_opportunities.py — Smart opportunity matching for members
 
 Runs after pipeline ingestion to match new opportunities against member profiles.
 Scores based on NAICS, location, set-asides, keywords, and value range.
-Better at serving you opportunities than TikTok is at serving you videos.
+Finally, a good use for an algorithm — serving you the right opportunities.
 
 USAGE:
   python3 scripts/match_opportunities.py              # Match all active members
@@ -212,7 +212,7 @@ def generate_email_html(member, matches):
         <div style="max-width: 600px; margin: 0 auto;">
             <div style="text-align: center; margin-bottom: 24px;">
                 <h1 style="color: #1B3A6B; font-size: 24px; margin: 0;">Award<span style="color: #E9A820;">opedia</span></h1>
-                <p style="color: #6B7280; margin: 8px 0 0;">Better at finding opportunities than TikTok is at finding videos</p>
+                <p style="color: #6B7280; margin: 8px 0 0;">Finally, a good use for an algorithm</p>
             </div>
 
             <div style="background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px;">

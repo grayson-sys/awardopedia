@@ -527,10 +527,10 @@ export default function App() {
 
           {/* Competitive comparison section */}
           <div className="compare-section">
-            <h2>Same Data. Better Experience. No Contracts.</h2>
+            <h2>Same Data. Original Documents. No Contracts.</h2>
             <p className="compare-subtitle">
               We pull from the same government sources as the big players — SAM.gov, USASpending, FPDS.
-              The difference? We use AI to make it useful, and we don't lock you into annual contracts.
+              You get the original federal PDFs so you can verify everything yourself. AI helps you read them faster.
             </p>
 
             <div className="compare-grid">
@@ -540,7 +540,7 @@ export default function App() {
                 <ul className="compare-list compare-them">
                   <li>$10,000–50,000/year subscriptions</li>
                   <li>Annual contracts required</li>
-                  <li>Same underlying government data</li>
+                  <li>Repackaged government data</li>
                   <li>Manual research and alerts</li>
                 </ul>
               </div>
@@ -561,9 +561,9 @@ export default function App() {
                 <p className="compare-desc">AI-powered. Pay as you go.</p>
                 <ul className="compare-list compare-win">
                   <li>No subscription — pay per report</li>
+                  <li>Original federal PDFs included</li>
                   <li>AI reads the solicitation for you</li>
-                  <li>Instant bid/no-bid analysis</li>
-                  <li>Same SAM.gov + FPDS data, better UX</li>
+                  <li>Don't trust us — verify the source</li>
                 </ul>
               </div>
             </div>
