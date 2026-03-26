@@ -473,6 +473,7 @@ export default function App() {
             else if (page === 'terms') setView('terms')
             else if (page === 'admin') setView('admin')
             else if (page === 'credits') setView('credits')
+            else if (page === 'dashboard') setView('dashboard')
             else if (page === 'auth') setView('auth')
             else if (page === 'logout') handleLogout()
           }}
