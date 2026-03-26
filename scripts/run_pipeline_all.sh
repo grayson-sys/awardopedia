@@ -26,3 +26,19 @@ done
 echo ""
 echo "=============================================="
 echo "All files processed at $(date)"
+echo ""
+echo "Running post-ingest cleanup..."
+echo "----------------------------------------------"
+
+# Fast agency name cleanup (batch UPDATEs, doesn't slow ingestion)
+python3 scripts/cleanup_agency_names.py 2>&1 | tee -a logs/pipeline_batch_$(date +%Y%m%d).log
+
+echo ""
+echo "Naming PDFs with LLaMA..."
+echo "----------------------------------------------"
+
+# Give PDFs logical names using keyword detection + LLaMA
+python3 scripts/name_pdfs_llama.py 2>&1 | tee -a logs/pipeline_batch_$(date +%Y%m%d).log
+
+echo ""
+echo "Pipeline batch complete at $(date)"

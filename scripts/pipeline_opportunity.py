@@ -1684,7 +1684,7 @@ STAGE_FUNCTIONS = {
     7:  stage_7_enrichment,
     8:  stage_8_congressional,
     9:  stage_9_link_check,
-    10: stage_10_static_page,
+    # 10: stage_10_static_page,  # DISABLED — enable after all records are cleaned
 }
 
 
