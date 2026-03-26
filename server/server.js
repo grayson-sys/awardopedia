@@ -130,6 +130,25 @@ app.get('/api/stats', async (req, res) => {
   }
 })
 
+// ─── NAICS search (for profile setup) ─────────────────────
+app.get('/api/naics/search', async (req, res) => {
+  const { q } = req.query
+  if (!q || q.length < 2) return res.json([])
+  try {
+    const { rows } = await pool.query(`
+      SELECT DISTINCT naics_code AS code, naics_description AS description
+      FROM opportunities
+      WHERE naics_code IS NOT NULL AND naics_description IS NOT NULL
+        AND (naics_description ILIKE $1 OR naics_code LIKE $2)
+      ORDER BY naics_description
+      LIMIT 15
+    `, [`%${q}%`, `${q}%`])
+    res.json(rows)
+  } catch (e) {
+    res.json([])
+  }
+})
+
 // ─── Feedback ─────────────────────────────────────────────
 app.post('/api/feedback', express.json(), async (req, res) => {
   const { notice_id, message, email } = req.body

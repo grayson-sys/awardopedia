@@ -1,19 +1,16 @@
 import { useState, useEffect } from 'react'
 import InfoIcon from '../components/InfoIcon'
 
-const NAICS_COMMON = [
-  ['561720', 'Janitorial Services'],
-  ['561730', 'Landscaping Services'],
-  ['541512', 'Computer Systems Design'],
-  ['541611', 'Management Consulting'],
-  ['541330', 'Engineering Services'],
-  ['238220', 'Plumbing & HVAC'],
-  ['561612', 'Security Guards'],
-  ['561210', 'Facilities Support'],
-  ['541519', 'IT Services'],
-  ['236220', 'Commercial Construction'],
-  ['541990', 'Other Professional Services'],
-  ['532120', 'Truck Rental'],
+// Common NAICS shown as quick picks (user can also search)
+const NAICS_QUICK = [
+  ['561720', 'Janitorial'],
+  ['561730', 'Landscaping'],
+  ['541512', 'IT Systems'],
+  ['541611', 'Consulting'],
+  ['541330', 'Engineering'],
+  ['238220', 'HVAC'],
+  ['561612', 'Security'],
+  ['236220', 'Construction'],
 ]
 
 const SET_ASIDES = [
@@ -40,6 +37,9 @@ export default function Dashboard({ user, token, onBack }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [newListName, setNewListName] = useState('')
+  const [naicsSearch, setNaicsSearch] = useState('')
+  const [naicsResults, setNaicsResults] = useState([])
+  const [naicsLabels, setNaicsLabels] = useState({})  // code -> description lookup
 
   useEffect(() => {
     if (!token) {
@@ -95,6 +95,37 @@ export default function Dashboard({ user, token, onBack }) {
       ? current.filter(x => x !== item)
       : [...current, item]
     updateProfile({ [field]: updated })
+  }
+
+  // NAICS search
+  useEffect(() => {
+    if (naicsSearch.length < 2) { setNaicsResults([]); return }
+    const timer = setTimeout(() => {
+      fetch(`/api/naics/search?q=${encodeURIComponent(naicsSearch)}`)
+        .then(r => r.json())
+        .then(results => {
+          setNaicsResults(results || [])
+          // Cache labels for display
+          const newLabels = { ...naicsLabels }
+          results.forEach(r => { newLabels[r.code] = r.description })
+          setNaicsLabels(newLabels)
+        })
+        .catch(() => setNaicsResults([]))
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [naicsSearch])
+
+  const addNaics = (code, desc) => {
+    if (!(profile.alert_naics || []).includes(code)) {
+      updateProfile({ alert_naics: [...(profile.alert_naics || []), code] })
+      setNaicsLabels({ ...naicsLabels, [code]: desc })
+    }
+    setNaicsSearch('')
+    setNaicsResults([])
+  }
+
+  const removeNaics = (code) => {
+    updateProfile({ alert_naics: (profile.alert_naics || []).filter(c => c !== code) })
   }
 
   if (loading) return <div className="container" style={{ padding: 40, textAlign: 'center' }}>Loading...</div>
@@ -337,39 +368,62 @@ export default function Dashboard({ user, token, onBack }) {
         {/* Alert Settings */}
         {tab === 'alerts' && (
           <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: '#1B3A6B' }}>Email Alerts</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: '#1B3A6B' }}>Smart Matching</h2>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={profile.alerts_enabled || false}
                   onChange={e => updateProfile({ alerts_enabled: e.target.checked })}
                 />
-                <span style={{ fontWeight: 500 }}>Enable alerts</span>
+                <span style={{ fontWeight: 500 }}>Email me matches</span>
               </label>
             </div>
 
-            <p style={{ marginBottom: 24, color: '#6B7280' }}>
-              Get notified when opportunities match your criteria. We'll send you a digest with opportunity cards — you can generate full reports from there.
+            <p style={{ marginBottom: 24, color: '#6B7280', fontSize: 14 }}>
+              Tell us what you're looking for and we'll surface the best opportunities. Everything is optional — add what's relevant to you.
             </p>
 
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>Industries (NAICS)</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {NAICS_COMMON.map(([code, desc]) => (
-                  <button
-                    key={code}
-                    onClick={() => toggleArrayItem('alert_naics', code)}
-                    className={`btn btn-sm ${(profile.alert_naics || []).includes(code) ? 'btn-navy' : 'btn-ghost'}`}
-                  >
-                    {desc}
-                  </button>
+            {/* Keywords - most important, put first */}
+            <div style={{ marginBottom: 28, padding: 20, background: '#F8F9FB', borderRadius: 8 }}>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, fontSize: 14, color: '#1B3A6B' }}>
+                Keywords <span style={{ fontWeight: 400, color: '#6B7280' }}>(strongly boost matching)</span>
+              </label>
+              <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 12 }}>
+                Add words that should flag opportunities for you. If you're a janitorial company, add "janitorial", "custodial", "cleaning", etc.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {(profile.alert_keywords || []).map((kw, i) => (
+                  <span key={i} style={{ background: '#E9A820', color: '#1B3A6B', padding: '6px 12px', borderRadius: 16, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {kw}
+                    <button onClick={() => {
+                      const updated = (profile.alert_keywords || []).filter((_, idx) => idx !== i)
+                      updateProfile({ alert_keywords: updated })
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>
+                  </span>
                 ))}
               </div>
+              <input
+                type="text"
+                placeholder="Type a keyword and press Enter..."
+                onKeyPress={e => {
+                  if (e.key === 'Enter' && e.target.value.trim()) {
+                    const kw = e.target.value.trim().toLowerCase()
+                    if (!(profile.alert_keywords || []).includes(kw)) {
+                      updateProfile({ alert_keywords: [...(profile.alert_keywords || []), kw] })
+                    }
+                    e.target.value = ''
+                  }
+                }}
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E4E9', borderRadius: 6, fontSize: 14 }}
+              />
             </div>
 
+            {/* Office Locations */}
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>States you operate in</label>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>
+                Office Locations <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(select all states where you have offices or can perform work)</span>
+              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {STATES.map(s => (
                   <button
@@ -384,8 +438,72 @@ export default function Dashboard({ user, token, onBack }) {
               </div>
             </div>
 
+            {/* Industries */}
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>Set-asides you qualify for</label>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>
+                Industries <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(search or pick from common)</span>
+              </label>
+
+              {/* Selected NAICS codes */}
+              {(profile.alert_naics || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {(profile.alert_naics || []).map(code => (
+                    <span key={code} style={{ background: '#1B3A6B', color: '#fff', padding: '6px 12px', borderRadius: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {naicsLabels[code] || code}
+                      <button onClick={() => removeNaics(code)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1, color: '#fff' }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Search input */}
+              <div style={{ position: 'relative', marginBottom: 12 }}>
+                <input
+                  type="text"
+                  value={naicsSearch}
+                  onChange={e => setNaicsSearch(e.target.value)}
+                  placeholder="Search industries... (e.g., janitorial, IT, construction)"
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E4E9', borderRadius: 6, fontSize: 14 }}
+                />
+                {naicsResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #E2E4E9', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 10, maxHeight: 200, overflow: 'auto' }}>
+                    {naicsResults.map(r => (
+                      <button
+                        key={r.code}
+                        onClick={() => addNaics(r.code, r.description)}
+                        style={{ display: 'block', width: '100%', padding: '10px 12px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #F3F4F6' }}
+                        onMouseOver={e => e.target.style.background = '#F8F9FB'}
+                        onMouseOut={e => e.target.style.background = 'none'}
+                      >
+                        <span style={{ color: '#1B3A6B', fontWeight: 500 }}>{r.code}</span>
+                        <span style={{ color: '#6B7280' }}> — {r.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick picks */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#9CA3AF', lineHeight: '28px' }}>Quick:</span>
+                {NAICS_QUICK.map(([code, desc]) => (
+                  <button
+                    key={code}
+                    onClick={() => addNaics(code, desc)}
+                    className={`btn btn-sm ${(profile.alert_naics || []).includes(code) ? 'btn-navy' : 'btn-ghost'}`}
+                    disabled={(profile.alert_naics || []).includes(code)}
+                  >
+                    {desc}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Set-asides */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>
+                Certifications <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(set-asides you qualify for)</span>
+              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {SET_ASIDES.map(([code, label]) => (
                   <button
@@ -399,8 +517,9 @@ export default function Dashboard({ user, token, onBack }) {
               </div>
             </div>
 
+            {/* Alert frequency */}
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>Alert frequency</label>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 13 }}>Email frequency</label>
               <select
                 value={profile.alert_frequency || 'daily'}
                 onChange={e => updateProfile({ alert_frequency: e.target.value })}
