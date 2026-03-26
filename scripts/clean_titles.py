@@ -56,13 +56,20 @@ def is_messy_title(title: str) -> bool:
 
     # Patterns that indicate messy titles
     patterns = [
-        r'^[0-9A-Z]{1,3}--',          # Leading codes like "48--", "Z--", "H930--"
-        r'^[A-Z]+,',                   # Starts with ALL CAPS word + comma: "PIPE,METALLIC"
-        r'^[A-Z\s]{10,}$',             # All caps, 10+ chars
-        r'\b[A-Z]{2,},[A-Z]{2,}\b',    # WORD,WORD pattern
-        r'^\d+\s*-\s*[A-Z]',           # "123 - SOMETHING"
-        r'\b(SVCS?|MAINT|EQUIP|CONSTR|MODS?)\b',  # Common abbreviations
-        r'--',                          # Double dashes
+        r'^[0-9A-Z]{1,3}--',              # Leading codes like "48--", "Z--", "H930--"
+        r'^[A-Z]+,',                       # Starts with ALL CAPS word + comma: "PIPE,METALLIC"
+        r'^[A-Z\s]{10,}$',                 # All caps, 10+ chars
+        r'\b[A-Z]{2,},[A-Z]{2,}\b',        # WORD,WORD pattern
+        r'^\d+\s*-\s*[A-Z]',               # "123 - SOMETHING"
+        r'--',                              # Double dashes
+        r'\bFY\d{2}\b',                     # FY26, FY25 etc
+        r'\([Bb]ase\s*\+\s*\d\)',           # (Base + 4) contract jargon
+        r'\b[A-Z]{2,}/[A-Z]{2,}\b',         # CATH/EP slash abbreviations
+        r'\b(SVCS?|MAINT|EQUIP|CONSTR|MODS?|MGMT|OPER|ADMIN|GOVT|DEPT|NATL|INTL)\b',  # Common abbrevs
+        r'\b(IDIQ|BPA|BOA|GSA|RFP|RFQ|RFI|SOW|PWS|CLINs?)\b',  # Contract terms
+        r'\b[A-Z]{4,}\b',                   # Any 4+ letter acronym (NASA ok, NYHHS needs cleaning)
+        r'^\d{3,}-',                        # Starts with 3+ digit code
+        r'\bNSN\b|\bFSC\b|\bNIIN\b',        # Supply codes
     ]
 
     for pattern in patterns:
@@ -71,7 +78,7 @@ def is_messy_title(title: str) -> bool:
 
     # Also flag if mostly uppercase and has weird punctuation
     upper_ratio = sum(1 for c in title if c.isupper()) / max(len(title), 1)
-    if upper_ratio > 0.7 and len(title) > 15:
+    if upper_ratio > 0.5 and len(title) > 20:  # Lowered threshold
         return True
 
     return False

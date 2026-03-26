@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+
+// Cloudflare Turnstile site key (public)
+const TURNSTILE_SITE_KEY = '0x4AAAAAABBBwRRRnnnTTT' // Replace with real key in production
 
 export default function Auth({ onLogin, onHome }) {
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot' | 'reset'
@@ -17,6 +20,57 @@ export default function Auth({ onLogin, onHome }) {
   const [loading, setLoading] = useState(false)
   const [resetSent, setResetSent] = useState(false)
   const [resetComplete, setResetComplete] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState(null)
+  const turnstileRef = useRef(null)
+
+  // Load Turnstile script when in register mode
+  useEffect(() => {
+    if (mode !== 'register') return
+    if (document.getElementById('turnstile-script')) return
+
+    const script = document.createElement('script')
+    script.id = 'turnstile-script'
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
+    script.async = true
+    document.body.appendChild(script)
+
+    return () => {
+      // Clean up widget when leaving register mode
+      if (window.turnstile && turnstileRef.current) {
+        window.turnstile.remove(turnstileRef.current)
+      }
+    }
+  }, [mode])
+
+  // Render Turnstile widget when script loads
+  useEffect(() => {
+    if (mode !== 'register') return
+
+    const renderTurnstile = () => {
+      if (!window.turnstile || !document.getElementById('turnstile-container')) return
+      if (turnstileRef.current) return // Already rendered
+
+      turnstileRef.current = window.turnstile.render('#turnstile-container', {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => setCaptchaToken(token),
+        'expired-callback': () => setCaptchaToken(null),
+        theme: 'light'
+      })
+    }
+
+    // Try immediately, or wait for script
+    if (window.turnstile) {
+      renderTurnstile()
+    } else {
+      const interval = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(interval)
+          renderTurnstile()
+        }
+      }, 100)
+      return () => clearInterval(interval)
+    }
+  }, [mode])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -50,7 +104,7 @@ export default function Auth({ onLogin, onHome }) {
       const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register'
       const body = mode === 'login'
         ? { email, password }
-        : { email, password, first_name: firstName, last_name: lastName, profession, company_name: companyName, company_size: companySize, company_state: companyState }
+        : { email, password, first_name: firstName, last_name: lastName, profession, company_name: companyName, company_size: companySize, company_state: companyState, captcha_token: captchaToken }
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -163,6 +217,15 @@ export default function Auth({ onLogin, onHome }) {
           {(mode === 'forgot' || mode === 'reset') && resetComplete && (
             <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: 6, color: '#047857', fontSize: 13, lineHeight: 1.5, textAlign: 'center' }}>
               Password reset successfully! You can now sign in.
+            </div>
+          )}
+
+          {mode === 'register' && (
+            <div style={{ marginTop: 8 }}>
+              <div id="turnstile-container" style={{ display: 'flex', justifyContent: 'center' }}></div>
+              <p style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', marginTop: 8 }}>
+                Protected by Cloudflare Turnstile
+              </p>
             </div>
           )}
 

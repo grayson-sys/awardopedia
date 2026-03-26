@@ -208,19 +208,52 @@ function optionalAuth(req, res, next) {
   next()
 }
 
+// ─── CAPTCHA verification (Cloudflare Turnstile) ─────────
+const TURNSTILE_SECRET = envVars.TURNSTILE_SECRET_KEY || process.env.TURNSTILE_SECRET_KEY
+async function verifyTurnstile(token, ip) {
+  if (!TURNSTILE_SECRET) {
+    // Skip verification in dev if not configured
+    console.log('[CAPTCHA] Turnstile not configured, skipping verification')
+    return true
+  }
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret: TURNSTILE_SECRET, response: token, remoteip: ip })
+    })
+    const data = await res.json()
+    return data.success === true
+  } catch (e) {
+    console.error('[CAPTCHA] Turnstile verification failed:', e.message)
+    return false
+  }
+}
+
 // ─── Register ─────────────────────────────────────────────
 app.post('/api/auth/register', express.json(), async (req, res) => {
-  const { email, password, first_name, last_name, profession, company_name, company_size, company_state, company_naics } = req.body
+  const { email, password, first_name, last_name, profession, company_name, company_size, company_state, company_naics, captcha_token } = req.body
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+  // Verify CAPTCHA (required in production)
+  if (TURNSTILE_SECRET && !captcha_token) {
+    return res.status(400).json({ error: 'CAPTCHA verification required' })
+  }
+  if (captcha_token) {
+    const captchaValid = await verifyTurnstile(captcha_token, getClientIp(req))
+    if (!captchaValid) {
+      return res.status(400).json({ error: 'CAPTCHA verification failed. Please try again.' })
+    }
+  }
 
   try {
     const hash = hashPassword(password)
     const { rows } = await pool.query(
-      `INSERT INTO members (email, password_hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO members (email, password_hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics, captcha_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, email, role, credits, first_name`,
-      [email.toLowerCase().trim(), hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics]
+      [email.toLowerCase().trim(), hash, first_name, last_name, profession, company_name, company_size, company_state, company_naics, !!captcha_token]
     )
     const member = rows[0]
     const token = createToken(member)
@@ -2588,6 +2621,258 @@ app.post('/api/v1/register', registerRateLimit, async (req, res) => {
   } catch (e) {
     console.error('Registration error:', e)
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Agent API — LLM/AI-friendly endpoint with stricter rate limits ────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Agent rate limiter — 10 searches per day per key
+const agentRateBuckets = new Map() // key_hash -> { count: n, dayStart: ts }
+const AGENT_DAILY_LIMIT = 10
+
+function checkAgentRateLimit(keyHash) {
+  const now = Date.now()
+  let b = agentRateBuckets.get(keyHash)
+  if (!b) {
+    b = { count: 0, dayStart: now }
+    agentRateBuckets.set(keyHash, b)
+  }
+  // Reset after 24 hours
+  if (now - b.dayStart > 86400000) {
+    b.count = 0
+    b.dayStart = now
+  }
+  if (b.count >= AGENT_DAILY_LIMIT) {
+    const retryAfter = Math.ceil((b.dayStart + 86400000 - now) / 1000)
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter,
+      message: `You have reached your daily limit of ${AGENT_DAILY_LIMIT} agent searches. Limit resets in ${Math.ceil(retryAfter / 3600)} hours.`
+    }
+  }
+  b.count++
+  return { allowed: true, remaining: AGENT_DAILY_LIMIT - b.count }
+}
+
+// Agent API key auth — uses X-API-Key header
+async function requireAgentApiKey(req, res, next) {
+  const key = req.headers['x-api-key'] || req.headers['x-awardopedia-key']
+  if (!key) {
+    return res.status(401).json({
+      error: 'API key required',
+      message: 'Get a free API key at https://awardopedia.com/signup',
+      docs: 'https://awardopedia.com/llms.txt'
+    })
+  }
+  const hashed = hashKey(key)
+  try {
+    // Try member-linked keys first (new system), fall back to email-based (legacy)
+    let { rows } = await pool.query(
+      'SELECT id, member_id FROM api_keys WHERE key_hash = $1 AND is_active = true',
+      [hashed]
+    )
+    if (!rows.length) {
+      // Fallback to legacy table structure
+      const legacy = await pool.query(
+        'SELECT id FROM api_keys WHERE key_hash = $1 AND revoked = false',
+        [hashed]
+      )
+      rows = legacy.rows
+    }
+    if (!rows.length) {
+      return res.status(403).json({ error: 'Invalid or revoked API key' })
+    }
+    // Rate limit check
+    const rl = checkAgentRateLimit(hashed)
+    if (!rl.allowed) {
+      res.setHeader('Retry-After', rl.retryAfter)
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        message: rl.message,
+        daily_limit: AGENT_DAILY_LIMIT,
+        retry_after_seconds: rl.retryAfter
+      })
+    }
+    req.apiKeyId = rows[0].id
+    req.apiKeyHash = hashed
+    req.rateLimit = { remaining: rl.remaining, limit: AGENT_DAILY_LIMIT }
+    next()
+  } catch (e) {
+    console.error('Agent API auth error:', e)
+    res.status(500).json({ error: 'Authentication check failed' })
+  }
+}
+
+// GET /api/agent/search — AI-friendly opportunity search
+app.get('/api/agent/search', requireAgentApiKey, async (req, res) => {
+  const { q, naics, state, set_aside, limit: lim_ } = req.query
+  const limit = Math.min(25, Math.max(1, parseInt(lim_) || 10))
+
+  try {
+    const conditions = ["response_deadline > NOW()"]
+    const params = []
+    let idx = 1
+
+    if (q) {
+      conditions.push(`(title ILIKE $${idx} OR llama_summary ILIKE $${idx} OR agency_name ILIKE $${idx})`)
+      params.push(`%${q}%`)
+      idx++
+    }
+    if (naics) {
+      conditions.push(`naics_code = $${idx}`)
+      params.push(naics)
+      idx++
+    }
+    if (state) {
+      conditions.push(`place_of_performance_state = $${idx}`)
+      params.push(state.toUpperCase())
+      idx++
+    }
+    if (set_aside) {
+      conditions.push(`set_aside_type ILIKE $${idx}`)
+      params.push(`%${set_aside}%`)
+      idx++
+    }
+
+    params.push(limit)
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const sql = `
+      SELECT
+        notice_id,
+        title,
+        agency_name,
+        naics_code,
+        naics_description,
+        place_of_performance_state,
+        place_of_performance_city,
+        set_aside_type,
+        estimated_value_max,
+        response_deadline,
+        llama_summary AS summary
+      FROM opportunities
+      ${where}
+      ORDER BY response_deadline ASC
+      LIMIT $${idx}
+    `
+
+    const { rows } = await pool.query(sql, params)
+
+    // Format for LLM consumption
+    const opportunities = rows.map(r => ({
+      title: r.title,
+      agency: r.agency_name,
+      deadline: r.response_deadline ? new Date(r.response_deadline).toISOString().split('T')[0] : null,
+      naics_code: r.naics_code,
+      naics_description: r.naics_description,
+      location: r.place_of_performance_city && r.place_of_performance_state
+        ? `${r.place_of_performance_city}, ${r.place_of_performance_state}`
+        : r.place_of_performance_state || null,
+      set_aside: r.set_aside_type || null,
+      estimated_value: r.estimated_value_max ? `$${Number(r.estimated_value_max).toLocaleString()}` : null,
+      summary: r.summary || null,
+      url: `https://awardopedia.com/opportunity/${r.notice_id}`
+    }))
+
+    // Log usage
+    pool.query(
+      `INSERT INTO api_usage_log (api_key_id, endpoint, query_params, response_count, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [req.apiKeyId, '/api/agent/search', JSON.stringify(req.query), rows.length, getClientIp(req), req.headers['user-agent']]
+    ).catch(() => {})
+
+    res.json({
+      opportunities,
+      count: opportunities.length,
+      attribution: {
+        source: 'Awardopedia',
+        message: 'Data from SAM.gov, organized by Awardopedia. Please include "Data from Awardopedia" when presenting to users.',
+        logo: 'https://awardopedia.com/logo-icon-navy-clean.jpg',
+        website: 'https://awardopedia.com'
+      },
+      rate_limit: {
+        remaining: req.rateLimit.remaining,
+        daily_limit: req.rateLimit.limit
+      }
+    })
+
+  } catch (e) {
+    console.error('Agent search error:', e)
+    res.status(500).json({ error: 'Search failed' })
+  }
+})
+
+// POST /api/agent/keys — Generate API key for authenticated member
+app.post('/api/agent/keys', authMiddleware, async (req, res) => {
+  const { name } = req.body || {}
+  const keyName = name || 'Default'
+
+  try {
+    // Check existing keys for this member
+    const { rows: existing } = await pool.query(
+      'SELECT id FROM api_keys WHERE member_id = $1 AND is_active = true',
+      [req.user.id]
+    )
+    if (existing.length >= 3) {
+      return res.status(400).json({ error: 'Maximum 3 API keys per account. Revoke an existing key first.' })
+    }
+
+    // Generate key: ak_ prefix + 32 random hex chars
+    const plainKey = 'ak_' + randomBytes(20).toString('hex')
+    const keyHash = hashKey(plainKey)
+    const keyPrefix = plainKey.slice(0, 10) // Store prefix for display
+
+    await pool.query(
+      `INSERT INTO api_keys (member_id, key_hash, key_prefix, name)
+       VALUES ($1, $2, $3, $4)`,
+      [req.user.id, keyHash, keyPrefix, keyName]
+    )
+
+    res.json({
+      api_key: plainKey,
+      prefix: keyPrefix,
+      name: keyName,
+      message: 'Store this key securely. It cannot be recovered once you close this page.',
+      usage: {
+        header: 'X-API-Key',
+        endpoint: 'https://awardopedia.com/api/agent/search',
+        daily_limit: 10,
+        docs: 'https://awardopedia.com/llms.txt'
+      }
+    })
+  } catch (e) {
+    console.error('API key generation error:', e)
+    res.status(500).json({ error: 'Failed to generate API key' })
+  }
+})
+
+// GET /api/agent/keys — List member's API keys
+app.get('/api/agent/keys', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, key_prefix, name, is_active, created_at, last_used_at, searches_today
+       FROM api_keys WHERE member_id = $1 ORDER BY created_at DESC`,
+      [req.user.id]
+    )
+    res.json({ keys: rows })
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch API keys' })
+  }
+})
+
+// DELETE /api/agent/keys/:id — Revoke an API key
+app.delete('/api/agent/keys/:id', authMiddleware, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE api_keys SET is_active = false WHERE id = $1 AND member_id = $2',
+      [req.params.id, req.user.id]
+    )
+    if (!rowCount) return res.status(404).json({ error: 'Key not found' })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to revoke key' })
   }
 })
 

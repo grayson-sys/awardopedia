@@ -40,6 +40,9 @@ export default function Dashboard({ user, token, onBack }) {
   const [naicsSearch, setNaicsSearch] = useState('')
   const [naicsResults, setNaicsResults] = useState([])
   const [naicsLabels, setNaicsLabels] = useState({})  // code -> description lookup
+  const [apiKeys, setApiKeys] = useState([])
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generatedKey, setGeneratedKey] = useState(null)
 
   useEffect(() => {
     if (!token) {
@@ -52,11 +55,13 @@ export default function Dashboard({ user, token, onBack }) {
       fetch('/api/matches', { headers }).then(r => r.ok ? r.json() : []),
       fetch('/api/saved', { headers }).then(r => r.ok ? r.json() : []),
       fetch('/api/lists', { headers }).then(r => r.ok ? r.json() : []),
-    ]).then(([p, m, s, l]) => {
+      fetch('/api/agent/keys', { headers }).then(r => r.ok ? r.json() : { keys: [] }),
+    ]).then(([p, m, s, l, k]) => {
       setProfile(p)
       setMatches(m || [])
       setSaved(s || [])
       setLists(l || [])
+      setApiKeys(k?.keys || [])
       setLoading(false)
     }).catch((e) => {
       console.error('Dashboard load error:', e)
@@ -154,6 +159,9 @@ export default function Dashboard({ user, token, onBack }) {
           </button>
           <button className={`tab ${tab === 'alerts' ? 'active' : ''}`} onClick={() => setTab('alerts')}>
             Alert Settings
+          </button>
+          <button className={`tab ${tab === 'api' ? 'active' : ''}`} onClick={() => setTab('api')}>
+            API Keys
           </button>
         </div>
 
@@ -532,6 +540,127 @@ export default function Dashboard({ user, token, onBack }) {
             </div>
 
             {saving && <p style={{ color: '#6B7280', fontSize: 13 }}>Saving...</p>}
+          </div>
+        )}
+
+        {/* API Keys */}
+        {tab === 'api' && (
+          <div className="card">
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px', color: '#1B3A6B' }}>API Keys</h2>
+              <p style={{ color: '#6B7280', margin: 0, fontSize: 14 }}>
+                Use API keys to integrate Awardopedia with AI agents, scripts, or your own applications.
+                Each key gets 10 searches per day.
+              </p>
+            </div>
+
+            {/* Generated key display (one-time view) */}
+            {generatedKey && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #F59E0B', borderRadius: 8, padding: 16, marginBottom: 20 }}>
+                <p style={{ margin: '0 0 8px', fontWeight: 600, color: '#92400E' }}>Your new API key (save it now!):</p>
+                <code style={{ display: 'block', background: '#FEF3C7', padding: 12, borderRadius: 4, fontSize: 14, wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  {generatedKey}
+                </code>
+                <p style={{ margin: '12px 0 0', fontSize: 13, color: '#92400E' }}>
+                  This key will only be shown once. Copy it now and store it securely.
+                </p>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(generatedKey); setGeneratedKey(null) }}
+                  className="btn btn-navy"
+                  style={{ marginTop: 12 }}
+                >
+                  Copy & Dismiss
+                </button>
+              </div>
+            )}
+
+            {/* Create new key */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+              <input
+                type="text"
+                value={newKeyName}
+                onChange={e => setNewKeyName(e.target.value)}
+                placeholder="Key name (e.g., My AI Agent)"
+                style={{ flex: 1, padding: '10px 12px', border: '1px solid #E2E4E9', borderRadius: 6 }}
+              />
+              <button
+                onClick={async () => {
+                  if (apiKeys.length >= 3) {
+                    alert('Maximum 3 keys allowed. Revoke an existing key first.')
+                    return
+                  }
+                  const res = await fetch('/api/agent/keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ name: newKeyName || 'Default' })
+                  })
+                  const data = await res.json()
+                  if (data.api_key) {
+                    setGeneratedKey(data.api_key)
+                    setNewKeyName('')
+                    // Refresh key list
+                    const keysRes = await fetch('/api/agent/keys', { headers: { Authorization: `Bearer ${token}` } })
+                    const keysData = await keysRes.json()
+                    setApiKeys(keysData.keys || [])
+                  } else {
+                    alert(data.error || 'Failed to create key')
+                  }
+                }}
+                className="btn btn-navy"
+                disabled={apiKeys.length >= 3}
+              >
+                Create Key
+              </button>
+            </div>
+
+            {/* Existing keys */}
+            {apiKeys.length > 0 ? (
+              <div>
+                <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: '#374151' }}>Your Keys</h3>
+                {apiKeys.map(k => (
+                  <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #E2E4E9' }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 500 }}>{k.name}</p>
+                      <code style={{ fontSize: 12, color: '#6B7280' }}>{k.key_prefix}...</code>
+                      <span style={{ marginLeft: 8, fontSize: 12, color: '#9CA3AF' }}>
+                        {k.searches_today || 0}/10 today
+                      </span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Revoke this key? Any integrations using it will stop working.')) return
+                        await fetch(`/api/agent/keys/${k.id}`, {
+                          method: 'DELETE',
+                          headers: { Authorization: `Bearer ${token}` }
+                        })
+                        setApiKeys(apiKeys.filter(x => x.id !== k.id))
+                      }}
+                      className="btn btn-ghost"
+                      style={{ color: '#DC2626' }}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: '#6B7280', fontSize: 14 }}>No API keys yet. Create one above to get started.</p>
+            )}
+
+            {/* Documentation link */}
+            <div style={{ marginTop: 24, padding: 16, background: '#F8F9FB', borderRadius: 8 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: '#1B3A6B' }}>Quick Start</h3>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#374151' }}>
+                Send a GET request with your API key:
+              </p>
+              <pre style={{ background: '#1B3A6B', color: '#fff', padding: 12, borderRadius: 4, fontSize: 12, overflow: 'auto' }}>
+{`curl -H "X-API-Key: ak_your_key_here" \\
+  "https://awardopedia.com/api/agent/search?q=cybersecurity&state=VA"`}
+              </pre>
+              <p style={{ margin: '12px 0 0', fontSize: 13 }}>
+                <a href="/llms.txt" target="_blank" style={{ color: '#1B3A6B', fontWeight: 500 }}>View full API documentation</a>
+              </p>
+            </div>
           </div>
         )}
       </div>
