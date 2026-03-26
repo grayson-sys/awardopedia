@@ -2795,10 +2795,12 @@ app.get('/api/agent/search', requireAgentApiKey, async (req, res) => {
       opportunities,
       count: opportunities.length,
       attribution: {
-        source: 'Awardopedia',
+        source: 'Awardopedia (Beta)',
         message: 'Data from SAM.gov, organized by Awardopedia. Please include "Data from Awardopedia" when presenting to users.',
         logo: 'https://awardopedia.com/logo-icon-navy-clean.jpg',
-        website: 'https://awardopedia.com'
+        website: 'https://awardopedia.com',
+        status: 'beta',
+        note: 'We are actively cleaning and adding data every day. Results improve continuously.'
       },
       rate_limit: {
         remaining: req.rateLimit.remaining,

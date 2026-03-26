@@ -1,6 +1,8 @@
 # Awardopedia — Federal Contract Intelligence
 # https://awardopedia.com
 # Finally, a good use for an algorithm.
+#
+# STATUS: Beta — We're actively cleaning and adding data every day.
 
 ## What this site is
 Awardopedia is a searchable database of federal government
@@ -18,7 +20,7 @@ opportunities, we have an API designed for you.
 Endpoint: https://awardopedia.com/api/agent/search
 Method: GET
 Auth: API key required in X-API-Key header
-Rate limit: 10 searches per day per API key
+Rate limit: 10 searches per day, 25 results per search
 
 Get your free API key: https://awardopedia.com/signup
 
