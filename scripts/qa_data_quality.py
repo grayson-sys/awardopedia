@@ -133,9 +133,9 @@ Return ONLY a JSON object:
   "issues": [
     {{
       "field": "field_name",
-      "problem": "brief description of what's wrong",
-      "suggestion": "how to fix this specific record",
-      "prevention": "a rule or regex or pipeline check that would catch this class of problem automatically in the future, described as a specific implementation suggestion — e.g. 'add a regex to _clean_title() that catches X pattern' or 'add a validation rule in _validate_extraction() that rejects Y when Z'"
+      "problem": "Plain English explanation of why this data is bad — write it so a non-technical person understands (e.g. 'The city name is in ALL CAPS which looks ugly and unprofessional to users')",
+      "suggestion": "How to fix THIS specific record (e.g. 'Change ARBOGA to Arboga')",
+      "prevention": "The RULE that would fix this for ALL future records — describe as a specific code change (e.g. 'In fetch_opportunity.py, add: if city == city.upper(): city = city.title()')"
     }}
   ],
   "score": 0-100 (100 = perfect, 0 = completely garbled)
@@ -246,8 +246,10 @@ def run_qa(args):
                 ai_score = result.get('score', 80)
                 scores.append(ai_score)
                 for issue in result.get('issues', []):
+                    field_name = issue.get('field', 'unknown')
                     record_issues.append({
-                        'field': issue.get('field', 'unknown'),
+                        'field': field_name,
+                        'value': str(rec.get(field_name, ''))[:80] if rec.get(field_name) else None,
                         'problem': issue.get('problem', ''),
                         'suggestion': issue.get('suggestion', ''),
                         'prevention': issue.get('prevention', ''),
@@ -304,6 +306,37 @@ def run_qa(args):
             'manual' if args.sample else 'scheduled',
         ])
         print(f"\nQuality run saved to data_quality_runs table")
+
+        # ── Create pipeline_feedback records for AI-proposed rules ────────
+        # Only create records for issues with prevention suggestions (actionable rules)
+        rules_created = 0
+        for issue in all_issues:
+            prevention = issue.get('prevention', '').strip()
+            if not prevention or issue.get('source') != 'ai':
+                continue
+            # Check if this exact rule already exists
+            cur2.execute("""
+                SELECT id FROM pipeline_feedback
+                WHERE field_name = %s AND proposed_rule = %s
+            """, [issue.get('field', 'unknown'), prevention])
+            if cur2.fetchone():
+                continue  # Already proposed
+            # Insert new rule for approval
+            cur2.execute("""
+                INSERT INTO pipeline_feedback
+                    (notice_id, field_name, old_value, new_value, explanation, proposed_rule, source, status, scope)
+                VALUES (%s, %s, %s, %s, %s, %s, 'ai', 'pending', 'pipeline')
+            """, [
+                issue.get('notice_id'),
+                issue.get('field', 'unknown'),
+                issue.get('value', issue.get('problem', '')[:80]),
+                issue.get('suggestion', '')[:200] if issue.get('suggestion') else None,
+                issue.get('problem', ''),
+                prevention,
+            ])
+            rules_created += 1
+        if rules_created:
+            print(f"Created {rules_created} new pipeline rule proposals for admin approval")
 
         # ── Check trend and alert ────────────────────────────────────────
         cur2.execute("""

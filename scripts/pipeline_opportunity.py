@@ -1041,19 +1041,32 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
     conn = db_connect()
     cur = conn.cursor()
 
-    # NAICS canonical lookup
+    # NAICS canonical lookup with parent code fallback
     naics = fields.get('naics_code')
     if naics:
-        # Handle truncated codes (e.g. "23822" → "238220")
+        # Try: exact match → append '0' → 4-digit parent → 3-digit parent → 2-digit sector
+        candidates = [naics]
+        if len(naics) == 5:
+            candidates.append(naics + '0')  # 5-digit → 6-digit
+        if len(naics) >= 4:
+            candidates.append(naics[:4])    # 4-digit parent
+        if len(naics) >= 3:
+            candidates.append(naics[:3])    # 3-digit subsector
+        if len(naics) >= 2:
+            candidates.append(naics[:2])    # 2-digit sector
+
+        placeholders = ','.join(['%s'] * len(candidates))
         cur.execute(
-            "SELECT code, description FROM naics_codes WHERE code = %s OR code = %s LIMIT 1",
-            [naics, naics + '0']
+            f"SELECT code, description FROM naics_codes WHERE code IN ({placeholders}) ORDER BY LENGTH(code) DESC LIMIT 1",
+            candidates
         )
         row = cur.fetchone()
         if row:
-            enrichment['naics_code'] = row[0]
+            enrichment['naics_code'] = naics  # Keep original code
             enrichment['naics_description'] = row[1]
-            if row[1] != fields.get('naics_description'):
+            if row[0] != naics:
+                log(7, notice_id, f"NAICS: {naics} → matched parent {row[0]} — {row[1]}")
+            elif row[1] != fields.get('naics_description'):
                 log(7, notice_id, f"NAICS: {row[0]} — {row[1]}")
 
     # PSC canonical lookup

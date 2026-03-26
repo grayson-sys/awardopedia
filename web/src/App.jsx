@@ -152,9 +152,60 @@ function stateName(code) { return US_STATES[code] || code || '—' }
 // ── App ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [view, setView] = useState('home')
+  const [view, setViewState] = useState('home')
   const [selectedContract, setSelectedContract] = useState(null)
   const [selectedOpp, setSelectedOpp] = useState(null)
+
+  // URL-based routing: update browser history when view changes
+  function setView(newView, pushHistory = true) {
+    setViewState(newView)
+    if (pushHistory) {
+      const path = newView === 'home' ? '/'
+        : newView === 'results' ? '/search'
+        : newView === 'opp-detail' ? '/opportunity'
+        : newView === 'contract-detail' ? '/contract'
+        : `/${newView}`
+      window.history.pushState({ view: newView }, '', path)
+    }
+  }
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    function handlePopState(e) {
+      if (e.state?.view) {
+        setViewState(e.state.view)
+      } else {
+        // Parse URL to determine view
+        const path = window.location.pathname
+        if (path === '/' || path === '') setViewState('home')
+        else if (path === '/search' || path === '/results') setViewState('results')
+        else if (path === '/opportunity') setViewState('opp-detail')
+        else if (path === '/contract') setViewState('contract-detail')
+        else if (path.startsWith('/')) setViewState(path.slice(1) || 'home')
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // On initial load, read URL to set initial view
+  useEffect(() => {
+    const path = window.location.pathname
+    if (path === '/search' || path === '/results') {
+      setViewState('results')
+      window.history.replaceState({ view: 'results' }, '', path)
+    } else if (path === '/opportunity') {
+      setViewState('opp-detail')
+    } else if (path === '/contract') {
+      setViewState('contract-detail')
+    } else if (path !== '/' && path !== '') {
+      const viewFromPath = path.slice(1)
+      if (['api', 'terms', 'admin', 'auth', 'credits'].includes(viewFromPath)) {
+        setViewState(viewFromPath)
+        window.history.replaceState({ view: viewFromPath }, '', path)
+      }
+    }
+  }, [])
 
   const [contracts, setContracts] = useState([])
   const [opportunities, setOpportunities] = useState([])
@@ -358,14 +409,16 @@ export default function App() {
       else if (conCount === 0 && oppCount > 0) setActiveTab('opportunities')
       // If both have results, keep current tab
     }
-    setView('results')
+    setViewState('results')
+    const searchUrl = query ? `/search?q=${encodeURIComponent(query)}` : '/search'
+    window.history.pushState({ view: 'results', query }, '', searchUrl)
   }
 
   async function openContract(c) {
     // Set initial data from list, then fetch full details with company profile
     setSelectedContract(c)
-    setView('contract-detail')
-    window.history.pushState({ view: 'contract-detail', id: c.piid }, '', `?contract=${c.piid}`)
+    setViewState('contract-detail')
+    window.history.pushState({ view: 'contract-detail', id: c.piid }, '', `/contract/${encodeURIComponent(c.piid)}`)
 
     // Fetch full contract details (includes recipient enrichment)
     try {
@@ -381,15 +434,15 @@ export default function App() {
 
   function openOpp(o) {
     setSelectedOpp(o)
-    setView('opp-detail')
-    window.history.pushState({ view: 'opp-detail', id: o.notice_id }, '', `?opp=${o.notice_id}`)
+    setViewState('opp-detail')
+    window.history.pushState({ view: 'opp-detail', id: o.notice_id }, '', `/opportunity/${o.notice_id}`)
   }
 
   function goHome() {
-    setView('home')
+    setViewState('home')
     setQuery('')
     clearFilters()
-    window.history.replaceState(null, '', '/')
+    window.history.pushState({ view: 'home' }, '', '/')
   }
 
   function handleSearchSubmit(e) {
@@ -779,7 +832,7 @@ export default function App() {
           user={user}
           token={token}
           onBuyCredits={() => setView('credits')}
-          onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
+          onBack={() => window.history.back()}
         />
       )}
       {view === 'opp-detail' && selectedOpp && (
@@ -790,7 +843,7 @@ export default function App() {
           onBuyCredits={() => setView('credits')}
           onSignIn={() => setView('auth')}
           onHome={goHome}
-          onBack={() => { setView('results'); window.history.replaceState(null, '', '/') }}
+          onBack={() => window.history.back()}
         />
       )}
 

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.awardopedia.fetchopps</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/openclaw/awardopedia/.venv/bin/python3</string>
+        <string>/Users/openclaw/awardopedia/scripts/fetch_opportunities_batch.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/openclaw/awardopedia</string>
+    <key>StartInterval</key>
+    <integer>7200</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/openclaw/awardopedia/logs/fetchopps.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/openclaw/awardopedia/logs/fetchopps.log</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/openclaw</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>NODE_TLS_REJECT_UNAUTHORIZED</key>
+        <string>0</string>
+    </dict>
+</dict>
+</plist>

@@ -589,6 +589,25 @@ def upsert_opportunity(fields: dict):
     """)
     db_cols = {r[0] for r in cur.fetchall()}
 
+    # Field length limits to prevent VARCHAR truncation errors
+    FIELD_LIMITS = {
+        'notice_id': 255, 'solicitation_number': 255, 'title': 500,
+        'naics_code': 10, 'psc_code': 10, 'agency_name': 500,
+        'sub_agency_name': 500, 'office_name': 500,
+        'contracting_officer': 255, 'contracting_officer_email': 255,
+        'contracting_officer_phone': 50, 'set_aside_type': 255,
+        'notice_type': 100, 'place_of_performance_state': 2,
+        'place_of_performance_city': 255, 'sam_url': 500,
+        'data_source': 50, 'jurisdiction_code': 50,
+        'alt_contact_name': 255, 'alt_contact_email': 255, 'alt_contact_phone': 50,
+    }
+
+    # Truncate string fields to fit DB limits
+    for key, limit in FIELD_LIMITS.items():
+        if key in fields and fields[key] and isinstance(fields[key], str):
+            if len(fields[key]) > limit:
+                fields[key] = fields[key][:limit]
+
     cols = [k for k, v in fields.items() if v is not None and k in db_cols]
     vals = [fields[c] for c in cols]
     placeholders = ', '.join('%s' for _ in cols)  # psycopg2 uses %s, not $1/$2

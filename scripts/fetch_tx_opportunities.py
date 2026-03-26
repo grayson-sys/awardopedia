@@ -139,6 +139,7 @@ def map_tx_opportunity(row: Dict) -> Dict:
     classification = row.get('project_classification', '')
 
     # Build description
+    csj = row.get('control_section_job_csj') or ''
     description_parts = []
     if project_type:
         description_parts.append(project_type)
@@ -148,6 +149,8 @@ def map_tx_opportunity(row: Dict) -> Dict:
         description_parts.append(f"on {highway}")
     if county:
         description_parts.append(f"in {county} County")
+    if csj:
+        description_parts.append(f"(CSJ: {csj})")
 
     description = ' '.join(description_parts) or f"TxDOT Project {project_id}"
 
@@ -199,6 +202,9 @@ def map_tx_opportunity(row: Dict) -> Dict:
         # NAICS (construction)
         'naics_code': '237310',  # Highway construction
         'naics_description': 'Highway, Street, and Bridge Construction',
+
+        # Link to TxDOT letting search (not direct to project, but best we can do)
+        'sam_url': f"https://www.txdot.gov/business/letting-bids/current-letting.html",
     }
 
 
@@ -218,6 +224,7 @@ def insert_tx_opportunity(opp: Dict, conn) -> bool:
                 response_deadline, posted_date, archive_date,
                 place_of_performance_city, place_of_performance_state,
                 naics_code, naics_description,
+                sam_url,
                 last_synced
             ) VALUES (
                 %(notice_id)s, %(solicitation_number)s, %(data_source)s, %(jurisdiction_code)s,
@@ -228,6 +235,7 @@ def insert_tx_opportunity(opp: Dict, conn) -> bool:
                 %(response_deadline)s, %(posted_date)s, %(archive_date)s,
                 %(place_of_performance_city)s, %(place_of_performance_state)s,
                 %(naics_code)s, %(naics_description)s,
+                %(sam_url)s,
                 NOW()
             )
             ON CONFLICT (notice_id) DO UPDATE SET
@@ -235,6 +243,7 @@ def insert_tx_opportunity(opp: Dict, conn) -> bool:
                 description = COALESCE(EXCLUDED.description, opportunities.description),
                 estimated_value_max = COALESCE(EXCLUDED.estimated_value_max, opportunities.estimated_value_max),
                 response_deadline = COALESCE(EXCLUDED.response_deadline, opportunities.response_deadline),
+                sam_url = COALESCE(EXCLUDED.sam_url, opportunities.sam_url),
                 last_synced = NOW()
         """, opp)
 
