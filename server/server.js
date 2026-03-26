@@ -1168,13 +1168,22 @@ app.get('/api/proxy/attachment', async (req, res) => {
     if (!upstream.ok) {
       return res.status(502).json({ error: `SAM.gov returned ${upstream.status}` })
     }
-    const contentType = upstream.headers.get('content-type') || 'application/octet-stream'
+    let contentType = upstream.headers.get('content-type') || 'application/octet-stream'
     const contentDisposition = upstream.headers.get('content-disposition') || ''
+
+    // SAM.gov often sends application/octet-stream for PDFs — detect and fix
+    const filenameMatch = contentDisposition.match(/filename[*]?=(?:"([^"]+)"|([^\s;]+))/)
+    const filename = filenameMatch ? (filenameMatch[1] || filenameMatch[2]) : ''
+    if (filename.toLowerCase().endsWith('.pdf') || contentType === 'application/octet-stream') {
+      // If filename ends in .pdf OR it's octet-stream (likely a PDF from SAM.gov), set correct type
+      if (filename.toLowerCase().endsWith('.pdf')) {
+        contentType = 'application/pdf'
+      }
+    }
+
     res.setHeader('Content-Type', contentType)
     // ALWAYS use 'inline' so PDFs open in browser instead of auto-downloading
     // User can still right-click → Save As, or use the "Download All as ZIP" option
-    const filenameMatch = contentDisposition.match(/filename[*]?=(?:"([^"]+)"|([^\s;]+))/)
-    const filename = filenameMatch ? (filenameMatch[1] || filenameMatch[2]) : ''
     res.setHeader('Content-Disposition', filename ? `inline; filename="${filename}"` : 'inline')
     // Stream the body directly to the response
     const reader = upstream.body.getReader()
