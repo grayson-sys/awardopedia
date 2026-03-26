@@ -541,6 +541,7 @@ export default function App() {
                       {naicsOptions.map(([code, desc]) => <option key={code} value={code}>{code} — {desc}</option>)}
                     </select>
                   </div>
+                  {/* Jurisdiction dropdown hidden — all data is federal for now
                   <div className="filter-group">
                     <label>Jurisdiction</label>
                     <select value={filterDataSource} onChange={e => setFilterDataSource(e.target.value)}>
@@ -549,6 +550,7 @@ export default function App() {
                       <option value="tx">Texas (TxDOT)</option>
                     </select>
                   </div>
+                  */}
                 </div>
                 <div className="filters-actions mt-8">
                   <button className="btn btn-navy btn-sm" onClick={() => loadData(false)} disabled={loading}>
