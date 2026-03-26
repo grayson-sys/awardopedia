@@ -58,7 +58,7 @@ export default function Auth({ onLogin, onHome }) {
       })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error)
-      localStorage.setItem('token', data.token)
+      try { localStorage.setItem('token', data.token) } catch {}
       onLogin(data.member, data.token)
     } catch (e) {
       setError(e.message)

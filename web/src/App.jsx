@@ -215,7 +215,9 @@ export default function App() {
 
   // Auth
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem('token') } catch { return null }
+  })
 
   // Restore session on mount
   useEffect(() => {
@@ -223,7 +225,7 @@ export default function App() {
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setUser(data))
-      .catch(() => { localStorage.removeItem('token'); setToken(null) })
+      .catch(() => { try { localStorage.removeItem('token') } catch {} setToken(null) })
   }, [token])
 
   function handleLogin(member, newToken) {
@@ -233,7 +235,7 @@ export default function App() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('token')
+    try { localStorage.removeItem('token') } catch {}
     setUser(null)
     setToken(null)
     setView('home')
