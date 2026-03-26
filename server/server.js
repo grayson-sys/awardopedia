@@ -114,6 +114,14 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// ─── LLMs.txt — AI agent discoverability ──────────────────
+app.get('/llms.txt', (req, res) => {
+  const llmsTxt = readFileSync(resolve(__dirname, '../web/public/llms.txt'), 'utf8')
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  res.setHeader('Cache-Control', 'public, max-age=3600')
+  res.send(llmsTxt)
+})
+
 // ─── Stats ────────────────────────────────────────────────
 app.get('/api/stats', async (req, res) => {
   try {
