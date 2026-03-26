@@ -950,14 +950,11 @@ app.get('/api/proxy/attachment', async (req, res) => {
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream'
     const contentDisposition = upstream.headers.get('content-disposition') || ''
     res.setHeader('Content-Type', contentType)
-    // Use 'inline' so PDFs open in browser instead of auto-downloading
+    // ALWAYS use 'inline' so PDFs open in browser instead of auto-downloading
     // User can still right-click → Save As, or use the "Download All as ZIP" option
-    if (contentDisposition) {
-      // Extract filename from original header, but force inline viewing
-      const filenameMatch = contentDisposition.match(/filename[*]?=(?:"([^"]+)"|([^\s;]+))/)
-      const filename = filenameMatch ? (filenameMatch[1] || filenameMatch[2]) : ''
-      res.setHeader('Content-Disposition', filename ? `inline; filename="${filename}"` : 'inline')
-    }
+    const filenameMatch = contentDisposition.match(/filename[*]?=(?:"([^"]+)"|([^\s;]+))/)
+    const filename = filenameMatch ? (filenameMatch[1] || filenameMatch[2]) : ''
+    res.setHeader('Content-Disposition', filename ? `inline; filename="${filename}"` : 'inline')
     // Stream the body directly to the response
     const reader = upstream.body.getReader()
     const pump = async () => {

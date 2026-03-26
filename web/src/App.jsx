@@ -521,6 +521,106 @@ export default function App() {
             </div>
           </div>
 
+          {/* Competitive comparison section */}
+          <div className="compare-section">
+            <h2>Same Data. Better Experience. No Contracts.</h2>
+            <p className="compare-subtitle">
+              We pull from the same government sources as the big players — SAM.gov, USASpending, FPDS.
+              The difference? We use AI to make it useful, and we don't lock you into annual contracts.
+            </p>
+
+            <div className="compare-grid">
+              <div className="compare-card">
+                <h3>Enterprise Platforms</h3>
+                <p className="compare-desc">GovWin, Bloomberg Government, Deltek</p>
+                <ul className="compare-list compare-them">
+                  <li>$10,000–50,000/year subscriptions</li>
+                  <li>Annual contracts required</li>
+                  <li>Same underlying government data</li>
+                  <li>Manual research and alerts</li>
+                </ul>
+              </div>
+
+              <div className="compare-card">
+                <h3>Bid Aggregators</h3>
+                <p className="compare-desc">GovSpend, BidNet, Onvia</p>
+                <ul className="compare-list compare-them">
+                  <li>$200–500/month subscriptions</li>
+                  <li>Data dumps without context</li>
+                  <li>You still do the analysis</li>
+                  <li>Limited AI or none at all</li>
+                </ul>
+              </div>
+
+              <div className="compare-card compare-us">
+                <h3>Awardopedia</h3>
+                <p className="compare-desc">AI-powered. Pay as you go.</p>
+                <ul className="compare-list compare-win">
+                  <li>No subscription — pay per report</li>
+                  <li>AI reads the solicitation for you</li>
+                  <li>Instant bid/no-bid analysis</li>
+                  <li>Same SAM.gov + FPDS data, better UX</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="compare-table-wrap">
+              <table className="compare-table">
+                <thead>
+                  <tr>
+                    <th>Capability</th>
+                    <th>Enterprise<br/>Platforms</th>
+                    <th>Bid<br/>Aggregators</th>
+                    <th className="highlight">Awardopedia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Annual cost</td>
+                    <td>$10K–50K</td>
+                    <td>$2K–6K</td>
+                    <td className="highlight">$0 + usage</td>
+                  </tr>
+                  <tr>
+                    <td>Contract required</td>
+                    <td><span className="icon-no"></span></td>
+                    <td><span className="icon-no"></span></td>
+                    <td className="highlight"><span className="icon-yes"></span> None</td>
+                  </tr>
+                  <tr>
+                    <td>Federal opportunities</td>
+                    <td><span className="icon-yes"></span></td>
+                    <td><span className="icon-yes"></span></td>
+                    <td className="highlight"><span className="icon-yes"></span></td>
+                  </tr>
+                  <tr>
+                    <td>Historical awards</td>
+                    <td><span className="icon-yes"></span></td>
+                    <td><span className="icon-partial"></span></td>
+                    <td className="highlight"><span className="icon-yes"></span></td>
+                  </tr>
+                  <tr>
+                    <td>AI analysis of solicitations</td>
+                    <td><span className="icon-no"></span></td>
+                    <td><span className="icon-no"></span></td>
+                    <td className="highlight"><span className="icon-yes"></span></td>
+                  </tr>
+                  <tr>
+                    <td>Instant bid/no-bid reports</td>
+                    <td><span className="icon-no"></span></td>
+                    <td><span className="icon-no"></span></td>
+                    <td className="highlight"><span className="icon-yes"></span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="compare-legend">
+                <span className="icon-yes"></span> Full support
+                <span className="icon-partial"></span> Limited
+                <span className="icon-no"></span> Not available
+              </p>
+            </div>
+          </div>
+
           <footer className="home-footer">
             <span>Data from <a href="https://usaspending.gov" target="_blank" rel="noopener">USASpending.gov</a> and <a href="https://sam.gov" target="_blank" rel="noopener">SAM.gov</a></span>
             <span>
