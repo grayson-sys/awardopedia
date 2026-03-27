@@ -1,6 +1,7 @@
 {
   "name": "awardopedia-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.grayson-sys/awardopedia",
   "description": "MCP server for searching federal contract opportunities via Awardopedia",
   "keywords": [
     "mcp",

@@ -10,6 +10,7 @@ import Auth from './pages/Auth'
 import Credits from './pages/Credits'
 import Jurisdictions from './pages/Jurisdictions'
 import Dashboard from './pages/Dashboard'
+import AIAssistant from './pages/AIAssistant'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -477,6 +478,7 @@ export default function App() {
             else if (page === 'credits') setView('credits')
             else if (page === 'dashboard') setView('dashboard')
             else if (page === 'auth') setView('auth')
+            else if (page === 'ai-assistant') setView('ai-assistant')
             else if (page === 'logout') handleLogout()
           }}
         />
@@ -628,6 +630,8 @@ export default function App() {
           <footer className="home-footer">
             <span>Data from <a href="https://usaspending.gov" target="_blank" rel="noopener">USASpending.gov</a> and <a href="https://sam.gov" target="_blank" rel="noopener">SAM.gov</a></span>
             <span>
+              <a href="#" onClick={e => { e.preventDefault(); setView('ai-assistant') }}>AI Assistant</a>
+              {' · '}
               <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a>
               {' · '}
               <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a>
@@ -959,6 +963,7 @@ export default function App() {
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
       {view === 'dashboard' && <Dashboard user={user} token={token} onBack={goHome} />}
       {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
+      {view === 'ai-assistant' && <AIAssistant />}
     </div>
   )
 }

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.grayson-sys/awardopedia",
+  "title": "Awardopedia - Federal Contracts",
+  "description": "Search federal government contract opportunities from SAM.gov via Claude",
+  "repository": {
+    "url": "https://github.com/grayson-sys/awardopedia",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "websiteUrl": "https://awardopedia.com",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "awardopedia-mcp",
+      "version": "0.1.1",
+      "runtime": "node",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "AWARDOPEDIA_API_KEY",
+          "description": "Free API key from awardopedia.com/signup",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

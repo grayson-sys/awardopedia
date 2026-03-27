@@ -1,115 +1,153 @@
-# Awardopedia MCP Server
+# MCP Registry
 
-Search federal government contract opportunities directly from Claude Desktop.
+The MCP registry provides MCP clients with a list of MCP servers, like an app store for MCP servers.
 
-> **Finally, a good use for an algorithm.**
+[**📤 Publish my MCP server**](docs/modelcontextprotocol-io/quickstart.mdx) | [**⚡️ Live API docs**](https://registry.modelcontextprotocol.io/docs) | [**👀 Ecosystem vision**](docs/design/ecosystem-vision.md) | 📖 **[Full documentation](./docs)**
 
-![Awardopedia](https://awardopedia.com/logo-horizontal-clean.jpg)
+## Development Status
 
-## What is this?
+**2025-10-24 update**: The Registry API has entered an **API freeze (v0.1)** 🎉. For the next month or more, the API will remain stable with no breaking changes, allowing integrators to confidently implement support. This freeze applies to v0.1 while development continues on v0. We'll use this period to validate the API in real-world integrations and gather feedback to shape v1 for general availability. Thank you to everyone for your contributions and patience—your involvement has been key to getting us here!
 
-This MCP server connects Claude to [Awardopedia](https://awardopedia.com), a searchable database of federal contract opportunities from SAM.gov. Ask Claude things like:
+**2025-09-08 update**: The registry has launched in preview 🎉 ([announcement blog post](https://blog.modelcontextprotocol.io/posts/2025-09-08-mcp-registry-preview/)). While the system is now more stable, this is still a preview release and breaking changes or data resets may occur. A general availability (GA) release will follow later. We'd love your feedback in [GitHub discussions](https://github.com/modelcontextprotocol/registry/discussions/new?category=ideas) or in the [#registry-dev Discord](https://discord.com/channels/1358869848138059966/1369487942862504016) ([joining details here](https://modelcontextprotocol.io/community/communication)).
 
-- "Find me cybersecurity contracts in Virginia"
-- "What small business set-asides are due this week?"
-- "Search for janitorial services opportunities in Colorado"
-- "Find 8(a) contracts for IT services"
+Current key maintainers:
+- **Adam Jones** (Anthropic) [@domdomegg](https://github.com/domdomegg)  
+- **Tadas Antanavicius** (PulseMCP) [@tadasant](https://github.com/tadasant)
+- **Toby Padilla** (GitHub) [@toby](https://github.com/toby)
+- **Radoslav (Rado) Dimitrov** (Stacklok) [@rdimitrov](https://github.com/rdimitrov)
 
-## Status: Beta
+## Contributing
 
-We're actively cleaning and adding data every day. Results improve continuously.
+We use multiple channels for collaboration - see [modelcontextprotocol.io/community/communication](https://modelcontextprotocol.io/community/communication).
 
-## Quick Start
+Often (but not always) ideas flow through this pipeline:
 
-### 1. Get your free API key
+- **[Discord](https://modelcontextprotocol.io/community/communication)** - Real-time community discussions
+- **[Discussions](https://github.com/modelcontextprotocol/registry/discussions)** - Propose and discuss product/technical requirements
+- **[Issues](https://github.com/modelcontextprotocol/registry/issues)** - Track well-scoped technical work  
+- **[Pull Requests](https://github.com/modelcontextprotocol/registry/pulls)** - Contribute work towards issues
 
-Sign up at [awardopedia.com/signup](https://awardopedia.com/signup) and generate an API key from your Dashboard.
+### Quick start:
 
-### 2. Add to Claude Desktop
+#### Pre-requisites
 
-Edit your Claude Desktop config file:
+- **Docker**
+- **Go 1.24.x**
+- **ko** - Container image builder for Go ([installation instructions](https://ko.build/install/))
+- **golangci-lint v2.4.0**
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+#### Running the server
 
-```json
-{
-  "mcpServers": {
-    "awardopedia": {
-      "command": "npx",
-      "args": ["-y", "awardopedia-mcp"],
-      "env": {
-        "AWARDOPEDIA_API_KEY": "ak_your_key_here"
-      }
-    }
-  }
-}
+```bash
+# Start full development environment
+make dev-compose
 ```
 
-### 3. Restart Claude Desktop
+This starts the registry at [`localhost:8080`](http://localhost:8080) with PostgreSQL. The database uses ephemeral storage and is reset each time you restart the containers, ensuring a clean state for development and testing.
 
-That's it! Try asking Claude about federal contracts.
+**Note:** The registry uses [ko](https://ko.build) to build container images. The `make dev-compose` command automatically builds the registry image with ko and loads it into your local Docker daemon before starting the services.
 
-## Tools Available
+By default, the registry seeds from the production API with a filtered subset of servers (to keep startup fast). This ensures your local environment mirrors production behavior and all seed data passes validation. For offline development you can seed from a file without validation with `MCP_REGISTRY_SEED_FROM=data/seed.json MCP_REGISTRY_ENABLE_REGISTRY_VALIDATION=false make dev-compose`.
 
-### search_opportunities
+The setup can be configured with environment variables in [docker-compose.yml](./docker-compose.yml) - see [.env.example](./.env.example) for a reference.
 
-Search for federal contract opportunities.
+<details>
+<summary>Alternative: Running a pre-built Docker image</summary>
 
-**Parameters:**
-- `q` — Search keywords (e.g., "cybersecurity", "janitorial")
-- `naics` — NAICS code filter (e.g., "541512" for IT)
-- `state` — State code (e.g., "VA", "CA")
-- `set_aside` — Set-aside type ("SBA", "8(a)", "SDVOSB", "WOSB", "HUBZone")
-- `limit` — Results per search (1-25, default 10)
+Pre-built Docker images are automatically published to GitHub Container Registry:
 
-### get_opportunity_details
+```bash
+# Run latest stable release
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:latest
 
-Get full details for a specific opportunity by notice ID.
+# Run latest from main branch (continuous deployment)
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main
 
-## Rate Limits
+# Run specific release version
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:v1.0.0
 
-- **10 searches per day** (free tier)
-- **25 results per search**
-
-Need more? Contact api@awardopedia.com
-
-## Examples
-
-**"Find IT contracts in DC"**
-```
-Found 12 federal contract opportunities:
-
-**Cloud Infrastructure Support Services**
-Agency: Department of Defense
-Deadline: 2026-04-15
-Location: Washington, DC
-Set-aside: Small Business
-NAICS: 541512 (Computer Systems Design Services)
-Details: https://awardopedia.com/opportunity/...
+# Run development build from main branch
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main-20250906-abc123d
 ```
 
-**"What SDVOSB opportunities are available for construction?"**
+**Available tags:** 
+- **Releases**: `latest`, `v1.0.0`, `v1.1.0`, etc.
+- **Continuous**: `main` (latest main branch build)
+- **Development**: `main-<date>-<sha>` (specific commit builds)
+
+</details>
+
+#### Publishing a server
+
+To publish a server, we've built a simple CLI. You can use it with:
+
+```bash
+# Build the latest CLI
+make publisher
+
+# Use it!
+./bin/mcp-publisher --help
 ```
-Found 8 federal contract opportunities:
 
-**Building Renovation - Phase 2**
-Agency: Department of Veterans Affairs
-Set-aside: SDVOSB
-NAICS: 236220 (Commercial Building Construction)
-...
+See [the publisher guide](./docs/modelcontextprotocol-io/quickstart.mdx) for more details.
+
+#### Other commands
+
+```bash
+# Run lint, unit tests and integration tests
+make check
 ```
 
-## Links
+There are also a few more helpful commands for development. Run `make help` to learn more, or look in [Makefile](./Makefile).
 
-- [Awardopedia](https://awardopedia.com) — Full website with PDFs and reports
-- [API Documentation](https://awardopedia.com/llms.txt)
-- [Get API Key](https://awardopedia.com/signup)
+<!--
+For Claude and other AI tools: Always prefer make targets over custom commands where possible.
+-->
 
-## License
+## Architecture
 
-MIT
+### Project Structure
 
----
+```
+├── cmd/                     # Application entry points
+│   └── publisher/           # Server publishing tool
+├── data/                    # Seed data
+├── deploy/                  # Deployment configuration (Pulumi)
+├── docs/                    # Documentation
+├── internal/                # Private application code
+│   ├── api/                 # HTTP handlers and routing
+│   ├── auth/                # Authentication (GitHub OAuth, JWT, namespace blocking)
+│   ├── config/              # Configuration management
+│   ├── database/            # Data persistence (PostgreSQL)
+│   ├── service/             # Business logic
+│   ├── telemetry/           # Metrics and monitoring
+│   └── validators/          # Input validation
+├── pkg/                     # Public packages
+│   ├── api/                 # API types and structures
+│   │   └── v0/              # Version 0 API types
+│   └── model/               # Data models for server.json
+├── scripts/                 # Development and testing scripts
+├── tests/                   # Integration tests
+└── tools/                   # CLI tools and utilities
+    └── validate-*.sh        # Schema validation tools
+```
 
-Built with care for small businesses navigating federal contracting.
+### Authentication
+
+Publishing supports multiple authentication methods:
+- **GitHub OAuth** - For publishing by logging into GitHub
+- **GitHub OIDC** - For publishing from GitHub Actions
+- **DNS verification** - For proving ownership of a domain and its subdomains
+- **HTTP verification** - For proving ownership of a domain
+
+The registry validates namespace ownership when publishing. E.g. to publish...:
+- `io.github.domdomegg/my-cool-mcp` you must login to GitHub as `domdomegg`, or be in a GitHub Action on domdomegg's repos
+- `me.adamjones/my-cool-mcp` you must prove ownership of `adamjones.me` via DNS or HTTP challenge
+
+## Community Projects
+
+Check out [community projects](docs/community-projects.md) to explore notable registry-related work created by the community.
+
+## More documentation
+
+See the [documentation](./docs) for more details if your question has not been answered here!
