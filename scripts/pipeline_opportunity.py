@@ -282,24 +282,33 @@ def _fetch_sam_resources(notice_id: str) -> tuple:
     for att in attachments:
         if att.get('deletedFlag') == '1':
             continue
+        # Capture access level info for CUI detection
+        access_level = att.get('accessLevel', 'public').lower()
+        export_controlled = att.get('exportControlled', '0') == '1'
+        explicit_access = att.get('explicitAccess', '0') == '1'
+
         if att.get('type') == 'link':
             links.append({
                 'type':        'link',
                 'url':         att.get('uri', ''),
                 'name':        att.get('description', '').strip() or 'External Link',
                 'posted_date': att.get('postedDate', ''),
+                'access_level': access_level,
             })
         else:
             # File attachment — build the download URL from resourceId
             rid = att.get('resourceId', '')
             download_url = f"https://sam.gov/api/prod/opps/v3/opportunities/resources/files/{rid}/download"
             files.append({
-                'type':         'file',
-                'url':          download_url,
-                'resource_id':  rid,
-                'name':         att.get('description', '').strip() or f"Document",
-                'posted_date':  att.get('postedDate', ''),
-                'size':         att.get('size', 0),
+                'type':            'file',
+                'url':             download_url,
+                'resource_id':     rid,
+                'name':            att.get('description', '').strip() or att.get('name', 'Document'),
+                'posted_date':     att.get('postedDate', ''),
+                'size':            att.get('size', 0),
+                'access_level':    access_level,
+                'export_controlled': export_controlled,
+                'explicit_access': explicit_access,
             })
     return files, links
 
@@ -401,13 +410,33 @@ def stage_2_download_pdfs(rec: dict, dry_run: bool = False) -> dict:
     rec['combined_text'] = combined_text
 
     # ── Step 3: Save attachments + links to DB ────────────────────────────
+    # Include access level info for CUI detection
     attachments_json = [
-        {'type': 'file', 'url': p['url'], 'name': p['filename'], 'local_path': p['local_path']}
+        {
+            'type': 'file',
+            'url': p['url'],
+            'name': p['filename'],
+            'local_path': p['local_path'],
+            'access_level': p.get('access_level', 'public'),
+            'export_controlled': p.get('export_controlled', False),
+        }
         for p in pdfs
     ] + [
-        {'type': 'link', 'url': lnk['url'], 'name': lnk['name']}
+        {
+            'type': 'link',
+            'url': lnk['url'],
+            'name': lnk['name'],
+            'access_level': lnk.get('access_level', 'public'),
+        }
         for lnk in web_links
     ]
+
+    # Detect CUI/controlled documents
+    has_controlled = any(
+        att.get('access_level') == 'controlled' or att.get('export_controlled')
+        for att in attachments_json
+    )
+    rec['has_controlled_docs'] = has_controlled
 
     conn = db_connect()
     conn.autocommit = True
@@ -1581,6 +1610,7 @@ def flush_to_db(rec: dict, dry_run: bool = False):
             work_hours, key_requirements,
             doc_count,
             congressional_district, congress_member_url,
+            has_controlled_docs,
             updated_at
         ) VALUES (
             %s, %s, %s::jsonb,
@@ -1590,6 +1620,7 @@ def flush_to_db(rec: dict, dry_run: bool = False):
             %s, %s::jsonb,
             %s,
             %s, %s,
+            %s,
             NOW()
         )
         ON CONFLICT (notice_id) DO UPDATE SET
@@ -1608,6 +1639,7 @@ def flush_to_db(rec: dict, dry_run: bool = False):
             doc_count            = EXCLUDED.doc_count,
             congressional_district = COALESCE(EXCLUDED.congressional_district, opportunity_intel.congressional_district),
             congress_member_url    = COALESCE(EXCLUDED.congress_member_url, opportunity_intel.congress_member_url),
+            has_controlled_docs  = EXCLUDED.has_controlled_docs,
             updated_at           = NOW()
     """, [
         notice_id,
@@ -1626,6 +1658,7 @@ def flush_to_db(rec: dict, dry_run: bool = False):
         len([p for p in rec.get('pdfs', []) if p.get('text')]),
         congress.get('congressional_district'),
         congress.get('congress_member_url'),
+        rec.get('has_controlled_docs', False),
     ])
 
     conn.close()

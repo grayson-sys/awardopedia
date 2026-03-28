@@ -11,6 +11,7 @@ import Credits from './pages/Credits'
 import Jurisdictions from './pages/Jurisdictions'
 import Dashboard from './pages/Dashboard'
 import AIAssistant from './pages/AIAssistant'
+import AskAI from './pages/AskAI'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -190,19 +191,51 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
-  // On initial load, read URL to set initial view
+  // On initial load, read URL to set initial view (supports direct links)
   useEffect(() => {
     const path = window.location.pathname
     if (path === '/search' || path === '/results') {
       setViewState('results')
       window.history.replaceState({ view: 'results' }, '', path)
+    } else if (path.startsWith('/opportunity/')) {
+      // Direct link to opportunity: /opportunity/{notice_id}
+      const noticeId = path.split('/opportunity/')[1]
+      if (noticeId) {
+        fetch(`/api/opportunities/${noticeId}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(opp => {
+            if (opp) {
+              setSelectedOpp(opp)
+              setViewState('opp-detail')
+            } else {
+              setViewState('home')
+            }
+          })
+          .catch(() => setViewState('home'))
+      }
+    } else if (path.startsWith('/contract/')) {
+      // Direct link to contract: /contract/{piid}
+      const piid = path.split('/contract/')[1]
+      if (piid) {
+        fetch(`/api/contracts/${piid}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(contract => {
+            if (contract) {
+              setSelectedContract(contract)
+              setViewState('contract-detail')
+            } else {
+              setViewState('home')
+            }
+          })
+          .catch(() => setViewState('home'))
+      }
     } else if (path === '/opportunity') {
       setViewState('opp-detail')
     } else if (path === '/contract') {
       setViewState('contract-detail')
     } else if (path !== '/' && path !== '') {
       const viewFromPath = path.slice(1)
-      if (['api', 'terms', 'admin', 'auth', 'credits'].includes(viewFromPath)) {
+      if (['api', 'terms', 'admin', 'auth', 'credits', 'ai-assistant', 'ask-ai'].includes(viewFromPath)) {
         setViewState(viewFromPath)
         window.history.replaceState({ view: viewFromPath }, '', path)
       }
@@ -479,6 +512,7 @@ export default function App() {
             else if (page === 'dashboard') setView('dashboard')
             else if (page === 'auth') setView('auth')
             else if (page === 'ai-assistant') setView('ai-assistant')
+            else if (page === 'ask-ai') setView('ask-ai')
             else if (page === 'logout') handleLogout()
           }}
         />
@@ -630,7 +664,9 @@ export default function App() {
           <footer className="home-footer">
             <span>Data from <a href="https://usaspending.gov" target="_blank" rel="noopener">USASpending.gov</a> and <a href="https://sam.gov" target="_blank" rel="noopener">SAM.gov</a></span>
             <span>
-              <a href="#" onClick={e => { e.preventDefault(); setView('ai-assistant') }}>AI Assistant</a>
+              <a href="#" onClick={e => { e.preventDefault(); setView('ask-ai') }}>Ask AI</a>
+              {' · '}
+              <a href="#" onClick={e => { e.preventDefault(); setView('ai-assistant') }}>AI Setup</a>
               {' · '}
               <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a>
               {' · '}
@@ -964,6 +1000,7 @@ export default function App() {
       {view === 'dashboard' && <Dashboard user={user} token={token} onBack={goHome} />}
       {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
       {view === 'ai-assistant' && <AIAssistant />}
+      {view === 'ask-ai' && <AskAI />}
     </div>
   )
 }

@@ -1169,6 +1169,7 @@ app.get('/api/opportunities', async (req, res) => {
         i.doc_count,
         i.congressional_district,
         i.congress_member_url,
+        i.has_controlled_docs,
         p.description AS psc_description
       FROM opportunities o
       LEFT JOIN opportunity_intel i USING (notice_id)
@@ -1201,6 +1202,7 @@ app.get('/api/opportunities/:notice_id', async (req, res) => {
         i.doc_count,
         i.congressional_district,
         i.congress_member_url,
+        i.has_controlled_docs,
         p.description AS psc_description
       FROM opportunities o
       LEFT JOIN opportunity_intel i USING (notice_id)
@@ -2883,6 +2885,166 @@ app.delete('/api/agent/keys/:id', authMiddleware, async (req, res) => {
     res.json({ ok: true })
   } catch (e) {
     res.status(500).json({ error: 'Failed to revoke key' })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Ask AI — Natural language search via Claude ────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Rate limit for AI search (in-memory, 20 queries per IP per hour)
+const aiSearchBuckets = new Map()
+function checkAiSearchLimit(ip) {
+  const now = Date.now()
+  let b = aiSearchBuckets.get(ip)
+  if (!b || now - b.start > 3600000) {
+    b = { count: 0, start: now }
+    aiSearchBuckets.set(ip, b)
+  }
+  if (b.count >= 20) return false
+  b.count++
+  return true
+}
+
+app.post('/api/ai/search', apiRateLimit, async (req, res) => {
+  const { query } = req.body
+  if (!query || query.length < 3) {
+    return res.status(400).json({ error: 'Please enter a search query' })
+  }
+  if (query.length > 500) {
+    return res.status(400).json({ error: 'Query too long (max 500 characters)' })
+  }
+
+  const ip = getClientIp(req)
+  if (!checkAiSearchLimit(ip)) {
+    return res.status(429).json({ error: 'Rate limit reached. Try again in an hour.' })
+  }
+
+  try {
+    // Call Claude to understand the query and generate SQL-friendly filters
+    const parsePrompt = `You are helping search a federal contracts database. Parse this user query and extract search parameters.
+
+User query: "${query}"
+
+Extract these fields if mentioned (return null if not mentioned):
+- keywords: search terms for title/description
+- state: two-letter state code (e.g., "VA", "CA")
+- naics: NAICS code if mentioned (6 digits)
+- set_aside: set-aside type (SBA, SDVOSB, WOSB, 8A, HUBZone)
+- max_value: maximum contract value mentioned
+- days_until_due: if they mention deadline timing
+
+Return ONLY valid JSON:
+{"keywords": "...", "state": "...", "naics": "...", "set_aside": "...", "max_value": null, "days_until_due": null}`
+
+    const parseRes = await fetch('http://localhost:3456/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: parsePrompt }]
+      })
+    })
+
+    if (!parseRes.ok) {
+      throw new Error('Claude proxy not available')
+    }
+
+    const parseData = await parseRes.json()
+    let filters = {}
+    try {
+      const raw = parseData.choices[0].message.content.trim()
+      filters = JSON.parse(raw.replace(/```json\n?|\n?```/g, ''))
+    } catch (e) {
+      filters = { keywords: query }
+    }
+
+    // Build SQL query
+    const conditions = ["response_deadline > NOW()"]
+    const params = []
+    let idx = 1
+
+    if (filters.keywords) {
+      conditions.push(`(title ILIKE $${idx} OR llama_summary ILIKE $${idx} OR agency_name ILIKE $${idx})`)
+      params.push(`%${filters.keywords}%`)
+      idx++
+    }
+    if (filters.state) {
+      conditions.push(`place_of_performance_state = $${idx}`)
+      params.push(filters.state.toUpperCase())
+      idx++
+    }
+    if (filters.naics) {
+      conditions.push(`naics_code = $${idx}`)
+      params.push(filters.naics)
+      idx++
+    }
+    if (filters.set_aside) {
+      conditions.push(`set_aside_type ILIKE $${idx}`)
+      params.push(`%${filters.set_aside}%`)
+      idx++
+    }
+    if (filters.max_value) {
+      conditions.push(`estimated_value_max <= $${idx}`)
+      params.push(parseFloat(filters.max_value))
+      idx++
+    }
+    if (filters.days_until_due) {
+      conditions.push(`response_deadline <= NOW() + INTERVAL '${parseInt(filters.days_until_due)} days'`)
+    }
+
+    const sql = `
+      SELECT notice_id, title, agency_name, naics_code, naics_description,
+             place_of_performance_state, place_of_performance_city,
+             set_aside_type, estimated_value_max, response_deadline, llama_summary
+      FROM opportunities
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY response_deadline ASC
+      LIMIT 10
+    `
+
+    const { rows } = await pool.query(sql, params)
+
+    // Generate conversational response
+    let response = ''
+    if (rows.length === 0) {
+      response = `I couldn't find any opportunities matching "${query}". Try broadening your search or checking different criteria.`
+    } else {
+      const summaryPrompt = `You found ${rows.length} federal contract opportunities for: "${query}"
+
+Results summary:
+${rows.slice(0, 5).map((r, i) => `${i + 1}. ${r.title} - ${r.agency_name} (Due: ${r.response_deadline ? new Date(r.response_deadline).toLocaleDateString() : 'TBD'})`).join('\n')}
+
+Write a brief (2-3 sentence) conversational summary of what you found. Be helpful and mention key details like agencies, deadlines, or set-asides if relevant. Don't list all results - the user will see the cards.`
+
+      const summaryRes = await fetch('http://localhost:3456/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4',
+          max_tokens: 300,
+          messages: [{ role: 'user', content: summaryPrompt }]
+        })
+      })
+
+      if (summaryRes.ok) {
+        const summaryData = await summaryRes.json()
+        response = summaryData.choices[0].message.content.trim()
+      } else {
+        response = `Found ${rows.length} opportunities matching your search. Here are the results:`
+      }
+    }
+
+    res.json({
+      response,
+      opportunities: rows,
+      filters_used: filters
+    })
+
+  } catch (e) {
+    console.error('AI search error:', e)
+    res.status(500).json({ error: 'Search failed. Please try again.' })
   }
 })
 
