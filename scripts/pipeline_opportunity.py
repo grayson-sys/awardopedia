@@ -833,11 +833,13 @@ Estimated value: {estimated_value}
 DOCUMENT TEXT ({pdf_count} PDFs, boilerplate stripped):
 {pdf_text}
 
+CRITICAL: Write TIME-NEUTRAL text. These summaries will be read months or years from now. NEVER use relative time like "tomorrow", "next week", "immediately", "soon", "urgent", "time is running out". Use only the actual date if needed (e.g., "deadline is March 28, 2026").
+
 Write ONLY a JSON object with three keys — nothing else, no markdown:
 
 {{
   "clean_title": "A clear, human-readable version of the opportunity title. Fix abbreviations (ASS→Assembly, MAINT→Maintenance, SVCS→Services), strip leading codes (16--, Z--, H930--), fix ALL CAPS. Keep it concise but readable. If the title is already good, return it unchanged.",
-  "summary": "2-3 plain-English sentences describing what this contract is. What is the government actually buying? What work will the winning contractor perform, and roughly how long does it last? Do NOT include the address, dollar amounts, size standard, set-aside type, award basis, or any data that appears in other fields — those are displayed separately. No emojis. Write as if explaining to a friend who has never heard of government contracting.",
+  "summary": "2-3 plain-English sentences describing what this contract is. What is the government actually buying? What work will the winning contractor perform, and roughly how long does it last? Do NOT include the address, dollar amounts, size standard, set-aside type, award basis, or any data that appears in other fields — those are displayed separately. No emojis. Write as if explaining to a friend who has never heard of government contracting. TIME-NEUTRAL — no 'tomorrow', 'soon', etc.",
   "key_requirements": ["up to 5 short strings — bid barriers and unusual requirements only, not boilerplate FAR clauses. Examples: specific equipment, certifications, clearances, tight timelines, incumbent advantages."]
 }}"""
 
@@ -852,13 +854,15 @@ Notice type: {notice_type}
 Location: {city}, {state}
 Deadline: {deadline}
 
+CRITICAL: Write TIME-NEUTRAL text. These summaries will be read months or years after the deadline. NEVER use relative time like "tomorrow", "next week", "immediately", "soon", "urgent", "move quickly", "time is running out". If you mention the deadline, use the actual date (e.g., "deadline is {deadline}").
+
 Write exactly 3 sentences in plain English. No bullets, no headers, no JSON, no emojis.
 
 Sentence 1: What is the government actually buying? Translate the title and NAICS into plain language. What work would the winning contractor perform day-to-day?
 
 Sentence 2: Who is this opportunity designed for? Mention the set-aside type in plain English if there is one. Is this a new contract or a recompete?
 
-Sentence 3: One practical insight — how competitive is this likely to be, is the deadline tight, or what should a potential bidder know?
+Sentence 3: One practical insight about this type of contract — what typically matters for winning similar opportunities?
 
 Do NOT include the dollar amount, size standard, award basis, or address — those are shown separately. Do not start with "This opportunity" or "The government is seeking". Vary your openings."""
 

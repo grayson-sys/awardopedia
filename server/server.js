@@ -975,6 +975,39 @@ app.put('/api/admin/jurisdictions/:code', express.json(), async (req, res) => {
   }
 })
 
+// ─── Agency name reverse mapping ────────────────────────────────────────────
+// Converts normalized display names back to patterns that match raw DB values
+// "Dept. of Energy" → matches "Energy, Department OF", "ENERGY, DEPARTMENT OF"
+function agencyFilterPatterns(displayName) {
+  if (!displayName) return []
+
+  const REVERSE_MAP = {
+    'USDA':                   ['Agriculture', 'AGRICULTURE'],
+    'Dept. of Commerce':      ['Commerce', 'COMMERCE'],
+    'Defense Department':     ['Defense', 'DEFENSE', 'DEPT OF DEFENSE'],
+    'Dept. of Education':     ['Education', 'EDUCATION'],
+    'Dept. of Energy':        ['Energy', 'ENERGY'],
+    'HHS':                    ['Health and Human Services', 'HEALTH AND HUMAN SERVICES'],
+    'DHS':                    ['Homeland Security', 'HOMELAND SECURITY'],
+    'HUD':                    ['Housing and Urban Development', 'HOUSING AND URBAN DEVELOPMENT'],
+    'Dept. of Justice':       ['Justice', 'JUSTICE'],
+    'Dept. of Labor':         ['Labor', 'LABOR'],
+    'Dept. of State':         ['State', 'STATE'],
+    'Dept. of the Interior':  ['Interior', 'INTERIOR'],
+    'Dept. of the Treasury':  ['Treasury', 'TREASURY'],
+    'Dept. of Transportation':['Transportation', 'TRANSPORTATION'],
+    'Veterans Affairs':       ['Veterans Affairs', 'VETERANS AFFAIRS'],
+    'USAID':                  ['International Development', 'INTERNATIONAL DEVELOPMENT'],
+    'EPA':                    ['Environmental Protection', 'ENVIRONMENTAL PROTECTION'],
+    'GSA':                    ['General Services', 'GENERAL SERVICES'],
+    'NASA':                   ['Aeronautics and Space', 'AERONAUTICS AND SPACE', 'NASA'],
+    'NSF':                    ['National Science Foundation', 'NATIONAL SCIENCE FOUNDATION'],
+    'SBA':                    ['Small Business Administration', 'SMALL BUSINESS ADMINISTRATION'],
+  }
+
+  return REVERSE_MAP[displayName] || [displayName]
+}
+
 // ─── Contracts (paginated) ────────────────────────────────────────────
 app.get('/api/contracts', async (req, res) => {
   try {
@@ -992,8 +1025,11 @@ app.get('/api/contracts', async (req, res) => {
       params.push(state)
     }
     if (agency) {
-      conditions.push(`agency_name ILIKE $${paramIdx++}`)
-      params.push(`%${agency}%`)
+      // Use reverse mapping to search for all possible raw formats
+      const patterns = agencyFilterPatterns(agency)
+      const agencyConditions = patterns.map(() => `agency_name ILIKE $${paramIdx++}`)
+      conditions.push(`(${agencyConditions.join(' OR ')})`)
+      patterns.forEach(p => params.push(`%${p}%`))
     }
     if (naics) {
       conditions.push(`naics_code = $${paramIdx++}`)
@@ -1115,8 +1151,11 @@ app.get('/api/opportunities', async (req, res) => {
       params.push(state)
     }
     if (agency) {
-      conditions.push(`agency_name ILIKE $${paramIdx++}`)
-      params.push(`%${agency}%`)
+      // Use reverse mapping to search for all possible raw formats
+      const patterns = agencyFilterPatterns(agency)
+      const agencyConditions = patterns.map(() => `agency_name ILIKE $${paramIdx++}`)
+      conditions.push(`(${agencyConditions.join(' OR ')})`)
+      patterns.forEach(p => params.push(`%${p}%`))
     }
     if (naics) {
       conditions.push(`o.naics_code = $${paramIdx++}`)
@@ -3076,6 +3115,56 @@ app.get('/sitemap.xml', async (req, res) => {
     res.send(xml)
   } catch (e) {
     res.status(500).send('<!-- sitemap error -->')
+  }
+})
+
+// ─── Social share preview for opportunities ────────────────────────────────
+// Returns HTML with proper OG tags for social platforms (iMessage, etc.)
+app.get('/opportunity/:notice_id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT title, agency_name, llama_summary, naics_description, response_deadline
+      FROM opportunities WHERE notice_id = $1
+    `, [req.params.notice_id])
+
+    if (!rows.length) {
+      return res.redirect('https://awardopedia.com')
+    }
+
+    const opp = rows[0]
+    const title = opp.title || 'Federal Contract Opportunity'
+    const desc = opp.llama_summary
+      ? opp.llama_summary.slice(0, 200) + '...'
+      : `${opp.agency_name || 'Government'} opportunity in ${opp.naics_description || 'federal contracting'}`
+    const url = `https://awardopedia.com/opportunity/${req.params.notice_id}`
+
+    // Return HTML that redirects to the SPA but has proper OG tags
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} | Awardopedia</title>
+  <meta name="description" content="${desc.replace(/"/g, '&quot;')}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${url}">
+  <meta property="og:title" content="${title.replace(/"/g, '&quot;')}">
+  <meta property="og:description" content="${desc.replace(/"/g, '&quot;')}">
+  <meta property="og:site_name" content="Awardopedia">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="${title.replace(/"/g, '&quot;')}">
+  <meta name="twitter:description" content="${desc.replace(/"/g, '&quot;')}">
+  <script>window.location.href = "${url}";</script>
+</head>
+<body>
+  <p>Redirecting to <a href="${url}">${title}</a>...</p>
+</body>
+</html>`
+
+    res.setHeader('Content-Type', 'text/html')
+    res.send(html)
+  } catch (e) {
+    res.redirect('https://awardopedia.com')
   }
 })
 
