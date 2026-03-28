@@ -976,7 +976,13 @@ export default function App() {
           user={user}
           token={token}
           onBuyCredits={() => setView('credits')}
-          onBack={() => window.history.back()}
+          onBack={() => {
+            if (window.history.length <= 2) {
+              setView('results')
+            } else {
+              window.history.back()
+            }
+          }}
         />
       )}
       {view === 'opp-detail' && selectedOpp && (
@@ -987,7 +993,14 @@ export default function App() {
           onBuyCredits={() => setView('credits')}
           onSignIn={() => setView('auth')}
           onHome={goHome}
-          onBack={() => window.history.back()}
+          onBack={() => {
+            // If came from direct link, go to results; otherwise go back
+            if (window.history.length <= 2) {
+              setView('results')
+            } else {
+              window.history.back()
+            }
+          }}
         />
       )}
 
