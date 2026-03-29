@@ -308,16 +308,23 @@ def _clean_agency(raw: str) -> str:
         if _re.match(r'^[A-Z0-9]{4,8}$', seg):
             continue
 
-        # Handle "DEPT OF X" → "X Department"
-        dept_match = _re.match(r'DEPT\s+OF\s+(?:THE\s+)?(.+)', seg, _re.IGNORECASE)
+        # Handle "DEPT OF X" or "OF X" (truncated) → proper department name
+        dept_match = _re.match(r'(?:DEPT\s+)?OF\s+(?:THE\s+)?(.+)', seg, _re.IGNORECASE)
         if dept_match:
-            dept_name = dept_match.group(1).strip()
-            # Special case: "DEFENSE" → "Defense Department"
-            if dept_name.upper() == 'DEFENSE':
+            dept_name = dept_match.group(1).strip().upper()
+            # Map to canonical department names
+            if dept_name == 'DEFENSE':
                 seg = 'Defense Department'
+            elif dept_name == 'THE NAVY' or dept_name == 'NAVY':
+                seg = 'Navy'
+            elif dept_name == 'THE ARMY' or dept_name == 'ARMY':
+                seg = 'Army'
+            elif dept_name == 'THE AIR FORCE' or dept_name == 'AIR FORCE':
+                seg = 'Air Force'
+            elif dept_name.startswith('THE '):
+                seg = dept_name[4:].title()
             else:
-                # Title case the department name
-                seg = dept_name.title() + ' Department'
+                seg = dept_name.title()
         else:
             # Expand known abbreviations
             words = seg.split()

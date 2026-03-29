@@ -212,6 +212,18 @@ def stage_1_ingest(raw_records: list, dry_run: bool = False) -> list:
         if not dry_run:
             upsert_opportunity(fields)
 
+            # Store raw data for future re-processing
+            raw_agency = raw.get('fullParentPathName', '')
+            conn = db_connect()
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute('''
+                UPDATE opportunities
+                SET raw_agency_hierarchy = %s, raw_sam_json = %s
+                WHERE notice_id = %s
+            ''', [raw_agency, json.dumps(raw), notice_id])
+            conn.close()
+
         title = (fields.get('title') or '')[:55]
         log(1, notice_id, f"{'[DRY] ' if dry_run else ''}Ingested: {title}")
 
@@ -808,18 +820,18 @@ def stage_5_ai_extract(rec: dict, dry_run: bool = False) -> dict:
 # STAGE 6 — AI SUMMARY
 # ═════════════════════════════════════════════════════════════════════════════
 
-SUMMARY_PROMPT = """You are a federal contracting analyst writing a plain-English brief for a small business owner.
+SUMMARY_PROMPT = """You are a federal contracting analyst. Read the document text and return a JSON object.
 
-OPPORTUNITY (from SAM.gov):
+OPPORTUNITY:
 Title: {title}
 Agency: {agency}
 NAICS: {naics_code} — {naics_description}
 Set-aside: {set_aside}
-State: {state}, City: {city}
+Location: {city}, {state}
 Posted: {posted} | Deadline: {deadline}
 CO: {co_name} | {co_email} | {co_phone}
 
-ALREADY EXTRACTED (deterministic — do not contradict these):
+ALREADY EXTRACTED (do not contradict):
 Size standard: {size_standard}
 Performance address: {performance_address}
 Contract structure: {contract_structure}
@@ -830,22 +842,24 @@ Clearance required: {clearance_required}
 Sole source: {sole_source}
 Estimated value: {estimated_value}
 
-DOCUMENT TEXT ({pdf_count} PDFs, boilerplate stripped):
+DOCUMENT TEXT ({pdf_count} PDFs):
 {pdf_text}
 
-CRITICAL: Write TIME-NEUTRAL text. These summaries will be read months or years from now. NEVER use relative time like "tomorrow", "next week", "immediately", "soon", "urgent", "time is running out". Use only the actual date if needed (e.g., "deadline is March 28, 2026").
+INSTRUCTIONS:
 
-Write ONLY a JSON object with three keys — nothing else, no markdown:
+1. clean_title: Fix the title if needed. Expand abbreviations (SVCS→Services, MAINT→Maintenance, EQUIP→Equipment). Strip leading codes (16--, H930--). Fix ALL CAPS to Title Case. If already readable, return unchanged. MUST be just the title text — no quotes, no preamble, no "Here is...".
 
-{{
-  "clean_title": "A clear, human-readable version of the opportunity title. Fix abbreviations (ASS→Assembly, MAINT→Maintenance, SVCS→Services), strip leading codes (16--, Z--, H930--), fix ALL CAPS. Keep it concise but readable. If the title is already good, return it unchanged.",
-  "summary": "2-3 plain-English sentences describing what this contract is. What is the government actually buying? What work will the winning contractor perform, and roughly how long does it last? Do NOT include the address, dollar amounts, size standard, set-aside type, award basis, or any data that appears in other fields — those are displayed separately. No emojis. Write as if explaining to a friend who has never heard of government contracting. TIME-NEUTRAL — no 'tomorrow', 'soon', etc.",
-  "key_requirements": ["up to 5 short strings — bid barriers and unusual requirements only, not boilerplate FAR clauses. Examples: specific equipment, certifications, clearances, tight timelines, incumbent advantages."]
-}}"""
+2. summary: Write 2-3 plain sentences describing what the government is buying and what work the contractor will perform. Be conservative — only state facts from the document. TIME-NEUTRAL — never use "soon", "urgent", "upcoming". Do not repeat data from other fields (address, dollars, set-aside).
 
-SUMMARY_PROMPT_NO_PDF = """You are a federal contracting analyst writing a brief for a small business owner who has never worked with the government before.
+3. key_requirements: List up to 5 bid barriers or unusual requirements (certifications, clearances, equipment, tight timelines). Skip boilerplate FAR clauses.
 
-OPPORTUNITY DATA:
+Return ONLY this JSON object — no markdown, no explanation, no preamble:
+
+{{"clean_title": "Cleaned Title Here", "summary": "Summary text here.", "key_requirements": ["requirement 1", "requirement 2"]}}"""
+
+SUMMARY_PROMPT_NO_PDF = """You are a federal contracting analyst. Return a JSON object based on this metadata.
+
+OPPORTUNITY:
 Title: {title}
 Agency: {agency}
 Industry: {naics} — {naics_description}
@@ -854,17 +868,17 @@ Notice type: {notice_type}
 Location: {city}, {state}
 Deadline: {deadline}
 
-CRITICAL: Write TIME-NEUTRAL text. These summaries will be read months or years after the deadline. NEVER use relative time like "tomorrow", "next week", "immediately", "soon", "urgent", "move quickly", "time is running out". If you mention the deadline, use the actual date (e.g., "deadline is {deadline}").
+INSTRUCTIONS:
 
-Write exactly 3 sentences in plain English. No bullets, no headers, no JSON, no emojis.
+1. clean_title: Fix the title if needed. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Strip leading codes. Fix ALL CAPS to Title Case. If already readable, return unchanged. MUST be just the title — no quotes, no preamble.
 
-Sentence 1: What is the government actually buying? Translate the title and NAICS into plain language. What work would the winning contractor perform day-to-day?
+2. summary: Write 2-3 plain sentences. What is the government buying? Who is this for (mention set-aside if any)? TIME-NEUTRAL — never use "soon", "urgent", "upcoming". Do not repeat address, dollars, or set-aside type.
 
-Sentence 2: Who is this opportunity designed for? Mention the set-aside type in plain English if there is one. Is this a new contract or a recompete?
+3. key_requirements: Based on the NAICS/industry, list 1-2 typical requirements for this type of work. If unsure, return empty array.
 
-Sentence 3: One practical insight about this type of contract — what typically matters for winning similar opportunities?
+Return ONLY this JSON object — no markdown, no explanation:
 
-Do NOT include the dollar amount, size standard, award basis, or address — those are shown separately. Do not start with "This opportunity" or "The government is seeking". Vary your openings."""
+{{"clean_title": "Cleaned Title", "summary": "Summary here.", "key_requirements": []}}"""
 
 
 def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
@@ -945,12 +959,12 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
             deadline=str(fields.get('response_deadline', '')),
         )
         try:
-            raw_text, tokens = call_claude(prompt, max_tokens=300)
-            rec['ai_summary'] = {'summary': raw_text, 'key_requirements': []}
+            result, tokens = call_claude_json(prompt)
+            rec['ai_summary'] = result
             rec.setdefault('_tokens', {'prompt': 0, 'completion': 0, 'total': 0})
             for k in rec['_tokens']:
                 rec['_tokens'][k] += tokens[k]
-            log(6, notice_id, f"Summary (no-PDF): {len(raw_text)} chars | {tokens['total']:,} tokens")
+            log(6, notice_id, f"Summary (no-PDF): {len(result.get('summary',''))} chars | {tokens['total']:,} tokens")
         except Exception as e:
             log(6, notice_id, f"AI summary (no-PDF) failed: {e}")
             rec['ai_summary'] = {}
@@ -958,12 +972,23 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
     # Write AI-polished title back to DB if Claude improved it
     clean_title = rec.get('ai_summary', {}).get('clean_title')
     if clean_title and clean_title != fields.get('title') and not dry_run:
-        conn = db_connect()
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("UPDATE opportunities SET title = %s WHERE notice_id = %s", [clean_title, notice_id])
-        conn.close()
-        log(6, notice_id, f"Title: {fields.get('title','')[:30]} → {clean_title[:30]}")
+        # Validate: reject titles that contain Claude preamble
+        bad_patterns = [
+            'here is', 'i made', 'let me know', 'i can help', "i'd be happy",
+            'cleaned-up', 'cleaned up', 'following changes', 'government contract title'
+        ]
+        title_lower = clean_title.lower()
+        if any(pat in title_lower for pat in bad_patterns):
+            log(6, notice_id, f"REJECTED bad clean_title: {clean_title[:50]}...")
+        elif len(clean_title) < 5 or len(clean_title) > 300:
+            log(6, notice_id, f"REJECTED clean_title (bad length): {len(clean_title)} chars")
+        else:
+            conn = db_connect()
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("UPDATE opportunities SET title = %s WHERE notice_id = %s", [clean_title, notice_id])
+            conn.close()
+            log(6, notice_id, f"Title: {fields.get('title','')[:30]} → {clean_title[:30]}")
 
     return rec
 
@@ -1125,18 +1150,98 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
             enrichment['office_state'] = office_info.get('state')
             log(7, notice_id, f"Office: {office_code} → {office_info['full_name']}")
 
-    conn.close()
+    # ══════════════════════════════════════════════════════════════════════════
+    # CANONICAL AGENCY LOOKUP — match raw SAM.gov hierarchy to agency_tree
+    # ══════════════════════════════════════════════════════════════════════════
 
-    # Agency normalization
-    raw_agency = fields.get('agency_name', '')
-    enrichment['agency_display'] = normalize_agency(raw_agency)
-    if enrichment['agency_display'] != raw_agency:
-        log(7, notice_id, f"Agency: {raw_agency[:30]} → {enrichment['agency_display']}")
+    # Get raw hierarchy from DB (stored in Stage 1) or from pipeline record
+    raw_hierarchy = rec.get('raw', {}).get('fullParentPathName', '')
+    if not raw_hierarchy:
+        # Fallback: check if stored in DB
+        cur.execute("SELECT raw_agency_hierarchy FROM opportunities WHERE notice_id = %s", [notice_id])
+        row = cur.fetchone()
+        raw_hierarchy = row[0] if row and row[0] else ''
+
+    agency_tree_id = None
+    if raw_hierarchy:
+        # Walk the tree to find deepest matching node
+        segments = [s.strip().lower() for s in raw_hierarchy.split('.')]
+
+        # Start at level 1 (department)
+        cur.execute(
+            "SELECT id FROM agency_tree WHERE level = 1 AND name_normalized = %s",
+            [segments[0]]
+        )
+        row = cur.fetchone()
+
+        if row:
+            agency_tree_id = row[0]
+
+            # Walk down tree matching each segment
+            for seg in segments[1:]:
+                cur.execute(
+                    "SELECT id FROM agency_tree WHERE parent_id = %s AND name_normalized = %s",
+                    [agency_tree_id, seg]
+                )
+                child = cur.fetchone()
+                if child:
+                    agency_tree_id = child[0]
+                else:
+                    break  # Stop at deepest match
+
+    if agency_tree_id:
+        enrichment['agency_tree_id'] = agency_tree_id
+
+        # Get department (level 1) and sub-agency (level 2) by walking up tree
+        cur.execute('''
+            WITH RECURSIVE ancestors AS (
+                SELECT id, name, parent_id, level FROM agency_tree WHERE id = %s
+                UNION ALL
+                SELECT t.id, t.name, t.parent_id, t.level
+                FROM agency_tree t JOIN ancestors a ON t.id = a.parent_id
+            )
+            SELECT name, level FROM ancestors ORDER BY level
+        ''', [agency_tree_id])
+        ancestors = cur.fetchall()
+
+        for name, level in ancestors:
+            if level == 1:
+                enrichment['agency_name'] = name
+            elif level == 2:
+                enrichment['sub_agency_name'] = name
+
+        log(7, notice_id, f"Agency tree: {raw_hierarchy[:40]}... → ID {agency_tree_id}")
+    else:
+        # No tree match — use deterministic cleanup as fallback
+        raw_agency = fields.get('agency_name', '')
+        enrichment['agency_display'] = normalize_agency(raw_agency)
+        if raw_hierarchy:
+            log(7, notice_id, f"Agency: NO TREE MATCH for {raw_hierarchy[:50]}...")
+
+    conn.close()
 
     # Write canonical data back to opportunities table
     conn = db_connect()
     conn.autocommit = True
     cur = conn.cursor()
+
+    # Update agency fields from tree lookup
+    if enrichment.get('agency_tree_id'):
+        cur.execute(
+            "UPDATE opportunities SET agency_tree_id = %s WHERE notice_id = %s",
+            [enrichment['agency_tree_id'], notice_id]
+        )
+    if enrichment.get('agency_name'):
+        cur.execute(
+            "UPDATE opportunities SET agency_name = %s WHERE notice_id = %s",
+            [enrichment['agency_name'], notice_id]
+        )
+    if enrichment.get('sub_agency_name'):
+        cur.execute(
+            "UPDATE opportunities SET sub_agency_name = %s WHERE notice_id = %s",
+            [enrichment['sub_agency_name'], notice_id]
+        )
+
     if enrichment.get('naics_description'):
         cur.execute(
             "UPDATE opportunities SET naics_description = %s WHERE notice_id = %s",

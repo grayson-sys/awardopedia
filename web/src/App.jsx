@@ -176,20 +176,32 @@ export default function App() {
   useEffect(() => {
     function handlePopState(e) {
       if (e.state?.view) {
-        setViewState(e.state.view)
+        // For detail views, verify we have the data; otherwise go to results
+        if (e.state.view === 'opp-detail' && !selectedOpp) {
+          setViewState('results')
+          window.history.replaceState({ view: 'results' }, '', '/search')
+        } else if (e.state.view === 'contract-detail' && !selectedContract) {
+          setViewState('results')
+          window.history.replaceState({ view: 'results' }, '', '/search')
+        } else {
+          setViewState(e.state.view)
+        }
       } else {
         // Parse URL to determine view
         const path = window.location.pathname
         if (path === '/' || path === '') setViewState('home')
         else if (path === '/search' || path === '/results') setViewState('results')
-        else if (path === '/opportunity') setViewState('opp-detail')
-        else if (path === '/contract') setViewState('contract-detail')
+        else if (path === '/opportunity' || path === '/contract') {
+          // Generic detail path without ID - redirect to results
+          setViewState('results')
+          window.history.replaceState({ view: 'results' }, '', '/search')
+        }
         else if (path.startsWith('/')) setViewState(path.slice(1) || 'home')
       }
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+  }, [selectedOpp, selectedContract])
 
   // On initial load, read URL to set initial view (supports direct links)
   useEffect(() => {
@@ -229,10 +241,10 @@ export default function App() {
           })
           .catch(() => setViewState('home'))
       }
-    } else if (path === '/opportunity') {
-      setViewState('opp-detail')
-    } else if (path === '/contract') {
-      setViewState('contract-detail')
+    } else if (path === '/opportunity' || path === '/contract') {
+      // Generic detail path without ID - redirect to search results
+      setViewState('results')
+      window.history.replaceState({ view: 'results' }, '', '/search')
     } else if (path !== '/' && path !== '') {
       const viewFromPath = path.slice(1)
       if (['api', 'terms', 'admin', 'auth', 'credits', 'ai-assistant', 'ask-ai'].includes(viewFromPath)) {
@@ -780,8 +792,12 @@ export default function App() {
               <>
                 {filteredOpportunities.length === 0 ? (
                   <div className="empty-state">
-                    <p>No open opportunities match your search{hasActiveFilters && ' and filters'}.</p>
-                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    <p style={{ fontSize: 15, marginBottom: 4 }}>No open opportunities found</p>
+                    <p style={{ fontSize: 13, opacity: 0.7 }}>Try adjusting your search or filters</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-16" onClick={clearFilters}>Clear all filters</button>}
                   </div>
                 ) : (
                   <>
@@ -838,8 +854,12 @@ export default function App() {
               <>
                 {pendingOpportunities.length === 0 ? (
                   <div className="empty-state">
-                    <p>No pending opportunities match your search{hasActiveFilters && ' and filters'}.</p>
-                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <p style={{ fontSize: 15, marginBottom: 4 }}>No pending awards found</p>
+                    <p style={{ fontSize: 13, opacity: 0.7 }}>Check back soon for new award decisions</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-16" onClick={clearFilters}>Clear all filters</button>}
                   </div>
                 ) : (
                   <>
@@ -895,8 +915,12 @@ export default function App() {
               <>
                 {filteredContracts.length === 0 ? (
                   <div className="empty-state">
-                    <p>No contracts match your search{hasActiveFilters && ' and filters'}.</p>
-                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-8" onClick={clearFilters}>Clear filters</button>}
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <p style={{ fontSize: 15, marginBottom: 4 }}>No contracts found</p>
+                    <p style={{ fontSize: 13, opacity: 0.7 }}>Try a different search term or adjust your filters</p>
+                    {hasActiveFilters && <button className="btn btn-ghost btn-sm mt-16" onClick={clearFilters}>Clear all filters</button>}
                   </div>
                 ) : (
                   <>
@@ -977,11 +1001,9 @@ export default function App() {
           token={token}
           onBuyCredits={() => setView('credits')}
           onBack={() => {
-            if (window.history.length <= 2) {
-              setView('results')
-            } else {
-              window.history.back()
-            }
+            // Always go to results view (more reliable than history.back)
+            setSelectedContract(null)
+            setView('results')
           }}
         />
       )}
@@ -994,12 +1016,9 @@ export default function App() {
           onSignIn={() => setView('auth')}
           onHome={goHome}
           onBack={() => {
-            // If came from direct link, go to results; otherwise go back
-            if (window.history.length <= 2) {
-              setView('results')
-            } else {
-              window.history.back()
-            }
+            // Always go to results view (more reliable than history.back)
+            setSelectedOpp(null)
+            setView('results')
           }}
         />
       )}
