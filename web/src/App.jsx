@@ -1001,9 +1001,13 @@ export default function App() {
           token={token}
           onBuyCredits={() => setView('credits')}
           onBack={() => {
-            // Always go to results view (more reliable than history.back)
+            // Go back in history to preserve scroll position and results
             setSelectedContract(null)
-            setView('results')
+            if (window.history.length > 1) {
+              window.history.back()
+            } else {
+              setView('results')
+            }
           }}
         />
       )}
@@ -1016,9 +1020,13 @@ export default function App() {
           onSignIn={() => setView('auth')}
           onHome={goHome}
           onBack={() => {
-            // Always go to results view (more reliable than history.back)
+            // Go back in history to preserve scroll position and results
             setSelectedOpp(null)
-            setView('results')
+            if (window.history.length > 1) {
+              window.history.back()
+            } else {
+              setView('results')
+            }
           }}
         />
       )}
