@@ -847,9 +847,9 @@ DOCUMENT TEXT ({pdf_count} PDFs):
 
 INSTRUCTIONS:
 
-1. clean_title: Fix the title if needed. Expand abbreviations (SVCS→Services, MAINT→Maintenance, EQUIP→Equipment). Strip leading codes (16--, H930--). Fix ALL CAPS to Title Case. If already readable, return unchanged. MUST be just the title text — no quotes, no preamble, no "Here is...".
+1. clean_title: Extract the actual descriptive title. Remove: solicitation numbers (e.g., "Solicitation No. 693JK426R500001"), contract codes (36C..., W912...), project numbers, RFQ/RFP prefixes. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Fix ALL CAPS to Title Case. Example: "Catering Solicitation No. 693JK426R500001 for DOT Secretary's 58th Annual Awards Ceremony" → "DOT Secretary's 58th Annual Awards Ceremony Catering". MUST be just the clean title — no quotes, no preamble.
 
-2. summary: Write 2-3 plain sentences describing what the government is buying and what work the contractor will perform. Be conservative — only state facts from the document. TIME-NEUTRAL — never use "soon", "urgent", "upcoming". Do not repeat data from other fields (address, dollars, set-aside).
+2. summary: Write 2-3 plain sentences describing what the government is buying and what work the contractor will perform. Be conservative — only state facts from the document. CRITICAL: Write as if the reader is viewing this months or years later. NEVER mention deadlines, dates, urgency, or time-sensitivity. Forbidden phrases: "days away", "deadline", "closes on", "due date", "upcoming", "soon", "urgent", "tight timeline", "time is", "act fast". Do not repeat data from other fields (address, dollars, set-aside).
 
 3. key_requirements: List up to 5 bid barriers or unusual requirements (certifications, clearances, equipment, tight timelines). Skip boilerplate FAR clauses.
 
@@ -870,9 +870,9 @@ Deadline: {deadline}
 
 INSTRUCTIONS:
 
-1. clean_title: Fix the title if needed. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Strip leading codes. Fix ALL CAPS to Title Case. If already readable, return unchanged. MUST be just the title — no quotes, no preamble.
+1. clean_title: Extract the actual descriptive title. Remove solicitation numbers (Solicitation No. XXX), contract codes (36C..., W912...), project numbers, RFQ/RFP prefixes. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Fix ALL CAPS to Title Case. MUST be just the clean title — no quotes, no preamble.
 
-2. summary: Write 2-3 plain sentences. What is the government buying? Who is this for (mention set-aside if any)? TIME-NEUTRAL — never use "soon", "urgent", "upcoming". Do not repeat address, dollars, or set-aside type.
+2. summary: Write 2-3 plain sentences. What is the government buying? Who is this for (mention set-aside if any)? CRITICAL: Write as if the reader is viewing this months or years later. NEVER mention deadlines, dates, urgency. Forbidden phrases: "days away", "deadline", "closes on", "due date", "upcoming", "soon", "urgent", "tight". Do not repeat address, dollars, or set-aside type.
 
 3. key_requirements: Based on the NAICS/industry, list 1-2 typical requirements for this type of work. If unsure, return empty array.
 

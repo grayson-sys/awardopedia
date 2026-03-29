@@ -279,6 +279,30 @@ _AGENCY_ABBREV = {
     'GSA': 'General Services Administration',
     'FAA': 'Federal Aviation Administration',
     'HQ': 'Headquarters',
+    # Preserve these acronyms (don't title-case them)
+    'NOAA': 'NOAA',
+    'NASA': 'NASA',
+    'EPA': 'EPA',
+    'HHS': 'HHS',
+    'VA': 'VA',
+    'HUD': 'HUD',
+    'DOT': 'DOT',
+    'DOE': 'DOE',
+    'DOJ': 'DOJ',
+    'DOL': 'DOL',
+    'SSA': 'SSA',
+    'SBA': 'SBA',
+    'FEMA': 'FEMA',
+    'CDC': 'CDC',
+    'NIH': 'NIH',
+    'FBI': 'FBI',
+    'DEA': 'DEA',
+    'ATF': 'ATF',
+    'ICE': 'ICE',
+    'CBP': 'CBP',
+    'TSA': 'TSA',
+    'USCG': 'USCG',
+    'IRS': 'IRS',
 }
 
 def _clean_agency(raw: str) -> str:
@@ -288,7 +312,7 @@ def _clean_agency(raw: str) -> str:
       2. Title-case segments
       3. Expand military abbreviations
       4. Replace "." separator with " > "
-    Example: "DEPT OF DEFENSE.DEPT OF THE ARMY.W7M8 USPFO" → "Defense Department > Army > US Property and Fiscal Office"
+    Example: "DEPT OF DEFENSE.DEPT OF THE ARMY.W7M8 USPFO" → "Department of Defense > Department of the Army > US Property and Fiscal Office"
     """
     if not raw:
         return raw
@@ -301,11 +325,29 @@ def _clean_agency(raw: str) -> str:
         if not seg:
             continue
 
-        # Strip leading internal codes (4-6 alphanumeric chars followed by space)
-        seg = _re.sub(r'^[A-Z0-9]{4,6}\s+', '', seg)
+        # Strip leading internal codes (alphanumeric with at least one digit, followed by space)
+        # Examples: W7M8, 36C242, 12B5 — but NOT "HEALTH" or "NATIONAL"
+        seg = _re.sub(r'^[A-Z0-9]*\d[A-Z0-9]*\s+', '', seg)
 
         # Skip if segment is just an internal code
         if _re.match(r'^[A-Z0-9]{4,8}$', seg):
+            continue
+
+        # Handle inverted format: "HEALTH AND HUMAN SERVICES, DEPARTMENT OF" → "Department of Health and Human Services"
+        inverted_match = _re.match(r'(.+),\s*DEPARTMENT\s+OF\s*$', seg, _re.IGNORECASE)
+        if inverted_match:
+            dept_name = inverted_match.group(1).strip().upper()
+            if dept_name == 'HEALTH AND HUMAN SERVICES':
+                seg = 'Department of Health and Human Services'
+            elif dept_name == 'VETERANS AFFAIRS':
+                seg = 'Department of Veterans Affairs'
+            elif dept_name == 'HOMELAND SECURITY':
+                seg = 'Department of Homeland Security'
+            elif dept_name == 'HOUSING AND URBAN DEVELOPMENT':
+                seg = 'Department of Housing and Urban Development'
+            else:
+                seg = 'Department of ' + dept_name.title()
+            cleaned.append(seg)
             continue
 
         # Handle "DEPT OF X" or "OF X" (truncated) → proper department name
@@ -314,25 +356,57 @@ def _clean_agency(raw: str) -> str:
             dept_name = dept_match.group(1).strip().upper()
             # Map to canonical department names
             if dept_name == 'DEFENSE':
-                seg = 'Defense Department'
+                seg = 'Department of Defense'
             elif dept_name == 'THE NAVY' or dept_name == 'NAVY':
-                seg = 'Navy'
+                seg = 'Department of the Navy'
             elif dept_name == 'THE ARMY' or dept_name == 'ARMY':
-                seg = 'Army'
+                seg = 'Department of the Army'
             elif dept_name == 'THE AIR FORCE' or dept_name == 'AIR FORCE':
-                seg = 'Air Force'
+                seg = 'Department of the Air Force'
+            elif dept_name in ('HEALTH AND HUMAN SERVICES', 'HHS'):
+                seg = 'Department of Health and Human Services'
+            elif dept_name == 'VETERANS AFFAIRS':
+                seg = 'Department of Veterans Affairs'
+            elif dept_name == 'HOMELAND SECURITY':
+                seg = 'Department of Homeland Security'
+            elif dept_name == 'THE INTERIOR' or dept_name == 'INTERIOR':
+                seg = 'Department of the Interior'
+            elif dept_name == 'THE TREASURY' or dept_name == 'TREASURY':
+                seg = 'Department of the Treasury'
+            elif dept_name == 'AGRICULTURE':
+                seg = 'Department of Agriculture'
+            elif dept_name == 'COMMERCE':
+                seg = 'Department of Commerce'
+            elif dept_name == 'ENERGY':
+                seg = 'Department of Energy'
+            elif dept_name == 'EDUCATION':
+                seg = 'Department of Education'
+            elif dept_name == 'JUSTICE':
+                seg = 'Department of Justice'
+            elif dept_name == 'LABOR':
+                seg = 'Department of Labor'
+            elif dept_name == 'STATE':
+                seg = 'Department of State'
+            elif dept_name == 'TRANSPORTATION':
+                seg = 'Department of Transportation'
+            elif dept_name == 'HOUSING AND URBAN DEVELOPMENT':
+                seg = 'Department of Housing and Urban Development'
             elif dept_name.startswith('THE '):
-                seg = dept_name[4:].title()
+                seg = 'Department of the ' + dept_name[4:].title()
             else:
-                seg = dept_name.title()
+                seg = 'Department of ' + dept_name.title()
         else:
-            # Expand known abbreviations
+            # Expand known abbreviations and fix casing
             words = seg.split()
             expanded = []
-            for w in words:
+            LOWERCASE_WORDS = {'AND', 'OF', 'THE', 'FOR', 'IN', 'AT', 'TO', 'BY', 'OR', 'A', 'AN'}
+            for i, w in enumerate(words):
                 upper_w = w.upper().strip('(),')
                 if upper_w in _AGENCY_ABBREV:
                     expanded.append(_AGENCY_ABBREV[upper_w])
+                elif upper_w in LOWERCASE_WORDS and i > 0:
+                    # Lowercase connector words (but not at start)
+                    expanded.append(w.lower())
                 elif w == w.upper() and len(w) > 2:
                     # ALL CAPS word, title-case it
                     expanded.append(w.title())
