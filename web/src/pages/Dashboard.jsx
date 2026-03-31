@@ -28,7 +28,7 @@ const STATES = [
   'VT','VA','WA','WV','WI','WY'
 ]
 
-export default function Dashboard({ user, token, onBack }) {
+export default function Dashboard({ user, token, onBack, onSignIn }) {
   const [tab, setTab] = useState('matches')
   const [profile, setProfile] = useState(null)
   const [matches, setMatches] = useState([])
@@ -134,7 +134,16 @@ export default function Dashboard({ user, token, onBack }) {
   }
 
   if (loading) return <div className="container" style={{ padding: 40, textAlign: 'center' }}>Loading...</div>
-  if (!profile) return <div className="container" style={{ padding: 40 }}>Please sign in to access your dashboard.</div>
+  if (!profile) return (
+    <div className="container" style={{ padding: 40, textAlign: 'center' }}>
+      <h2 style={{ color: '#1B3A6B', marginBottom: 16 }}>Sign in to access your dashboard</h2>
+      <p style={{ color: '#6B7280', marginBottom: 24 }}>Create a free account to save opportunities, set up alerts, and get personalized matches.</p>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+        {onSignIn && <button className="btn btn-navy" onClick={onSignIn}>Sign In / Register</button>}
+        <button className="btn btn-ghost" onClick={onBack}>Back to Search</button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="dashboard">

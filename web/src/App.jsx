@@ -397,12 +397,10 @@ export default function App() {
   }, [])
 
   // ── Filter options (derived from data) ─────────────────────────────────
+  // Show all US states in dropdown (not just ones in loaded data)
   const stateOptions = useMemo(() => {
-    const states = new Set()
-    contracts.forEach(c => { if (c.recipient_state) states.add(c.recipient_state) })
-    opportunities.forEach(o => { if (o.place_of_performance_state) states.add(o.place_of_performance_state) })
-    return [...states].filter(s => US_STATES[s]).sort()
-  }, [contracts, opportunities])
+    return Object.keys(US_STATES).sort()
+  }, [])
 
   const setAsideOptions = useMemo(() => {
     const vals = new Set()
@@ -1073,7 +1071,7 @@ export default function App() {
       {view === 'admin' && <Admin onBack={goHome} onJurisdictions={() => setView('jurisdictions')} />}
       {view === 'jurisdictions' && <Jurisdictions onBack={() => setView('admin')} />}
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
-      {view === 'dashboard' && <Dashboard user={user} token={token} onBack={goHome} />}
+      {view === 'dashboard' && <Dashboard user={user} token={token} onBack={goHome} onSignIn={() => setView('auth')} />}
       {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
       {view === 'ai-assistant' && <AIAssistant />}
       {view === 'ask-ai' && <AskAI />}
