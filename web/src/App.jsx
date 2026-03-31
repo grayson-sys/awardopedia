@@ -810,7 +810,12 @@ export default function App() {
             {/* ── Opportunities table ── */}
             {activeTab === 'opportunities' && (
               <>
-                {filteredOpportunities.length === 0 ? (
+                {loading ? (
+                  <div className="empty-state">
+                    <div className="spinner" style={{ width: 32, height: 32, marginBottom: 16 }} />
+                    <p style={{ fontSize: 15, color: '#6B7280' }}>Loading opportunities...</p>
+                  </div>
+                ) : filteredOpportunities.length === 0 ? (
                   <div className="empty-state">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -872,7 +877,12 @@ export default function App() {
             {/* ── Pending Award table ── */}
             {activeTab === 'pending' && (
               <>
-                {pendingOpportunities.length === 0 ? (
+                {loading ? (
+                  <div className="empty-state">
+                    <div className="spinner" style={{ width: 32, height: 32, marginBottom: 16 }} />
+                    <p style={{ fontSize: 15, color: '#6B7280' }}>Loading pending awards...</p>
+                  </div>
+                ) : pendingOpportunities.length === 0 ? (
                   <div className="empty-state">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
