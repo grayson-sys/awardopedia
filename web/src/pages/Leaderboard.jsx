@@ -336,6 +336,58 @@ const DEFAULT_SUBCONTRACTING = {
   ]
 }
 
+// Normalize company name for matching (strip suffixes, uppercase)
+function normalizeCompanyName(name) {
+  if (!name) return ''
+  return name.toUpperCase()
+    .replace(/,?\s*(INC\.?|LLC|CORP\.?|CORPORATION|COMPANY|CO\.?|LTD\.?|L\.?L\.?C\.?|INCORPORATED)\.?\s*$/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Find best match in SUBCONTRACTING_INFO
+function findSubcontractInfo(company) {
+  if (!company) return DEFAULT_SUBCONTRACTING
+
+  // Try exact match first
+  if (SUBCONTRACTING_INFO[company]) return SUBCONTRACTING_INFO[company]
+
+  // Try normalized match
+  const normalized = normalizeCompanyName(company)
+  for (const [key, info] of Object.entries(SUBCONTRACTING_INFO)) {
+    if (normalizeCompanyName(key) === normalized) return info
+  }
+
+  // Try partial match (company name contains key or vice versa)
+  for (const [key, info] of Object.entries(SUBCONTRACTING_INFO)) {
+    const keyNorm = normalizeCompanyName(key)
+    if (normalized.includes(keyNorm) || keyNorm.includes(normalized)) return info
+  }
+
+  return DEFAULT_SUBCONTRACTING
+}
+
+// Find best match in DEFENSE_TECH_INFO
+function findDefenseTechInfo(company) {
+  if (!company) return {}
+
+  // Try exact match first
+  if (DEFENSE_TECH_INFO[company]) return DEFENSE_TECH_INFO[company]
+
+  // Try case-insensitive match
+  const upper = company.toUpperCase()
+  for (const [key, info] of Object.entries(DEFENSE_TECH_INFO)) {
+    if (key.toUpperCase() === upper) return info
+  }
+
+  // Try partial match
+  for (const [key, info] of Object.entries(DEFENSE_TECH_INFO)) {
+    if (upper.includes(key.toUpperCase()) || key.toUpperCase().includes(upper)) return info
+  }
+
+  return {}
+}
+
 function formatDollars(n) {
   if (n >= 1e12) return `$${(n/1e12).toFixed(1)} trillion`
   if (n >= 1e9) return `$${(n/1e9).toFixed(1)} billion`
@@ -355,7 +407,7 @@ const SMALL_BIZ_COLORS = ['#E9A820', '#F0B840', '#F5C860', '#F8D880', '#FAE8A0',
 const DEFENSE_TECH_COLORS = ['#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#D1FAE5']
 
 function SubcontractingModal({ company, onClose }) {
-  const info = SUBCONTRACTING_INFO[company] || DEFAULT_SUBCONTRACTING
+  const info = findSubcontractInfo(company)
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -419,7 +471,7 @@ function SubcontractingModal({ company, onClose }) {
 }
 
 function DefenseTechModal({ company, onClose }) {
-  const info = DEFENSE_TECH_INFO[company] || {}
+  const info = findDefenseTechInfo(company)
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -803,7 +855,7 @@ export default function Leaderboard({ onBack, onSearchContracts }) {
                   </thead>
                   <tbody>
                     {defenseTech.map((row) => {
-                      const info = DEFENSE_TECH_INFO[row.name] || {}
+                      const info = findDefenseTechInfo(row.name)
                       return (
                         <tr key={row.name} style={{ borderBottom: '1px solid #E2E4E9' }}>
                           <td style={{ padding: '12px 8px', color: '#374151', fontWeight: 500 }}>{row.name}</td>
