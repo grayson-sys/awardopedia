@@ -1,6 +1,37 @@
-import { ArrowLeft } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, Send } from 'lucide-react'
 
 export default function About({ onBack }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!message.trim()) return
+    setSending(true)
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notice_id: null,
+          email: email || null,
+          message: `[Contact Form] ${name ? `From: ${name}\n` : ''}${message}`
+        })
+      })
+      setSent(true)
+      setName('')
+      setEmail('')
+      setMessage('')
+    } catch (err) {
+      alert('Failed to send. Please try again.')
+    }
+    setSending(false)
+  }
+
   return (
     <div className="page-container" style={{ maxWidth: 800, margin: '0 auto', padding: '32px 24px' }}>
       <button
@@ -72,10 +103,88 @@ export default function About({ onBack }) {
           Contact
         </h2>
 
-        <p style={{ marginBottom: 20 }}>
-          For questions, feedback, or press inquiries, please reach out via the contact form
-          or email <a href="mailto:hello@awardopedia.com" style={{ color: '#4F46E5' }}>hello@awardopedia.com</a>.
+        <p style={{ marginBottom: 16 }}>
+          For questions, feedback, or press inquiries, send us a note:
         </p>
+
+        {sent ? (
+          <div style={{
+            padding: 16,
+            background: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            borderRadius: 8,
+            marginBottom: 20,
+            color: '#065F46'
+          }}>
+            Thanks for reaching out! We'll get back to you soon.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="Name (optional)"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                style={{
+                  padding: '10px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: 6,
+                  fontSize: 14
+                }}
+              />
+              <input
+                type="email"
+                placeholder="Email (optional)"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                style={{
+                  padding: '10px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: 6,
+                  fontSize: 14
+                }}
+              />
+            </div>
+            <textarea
+              placeholder="Your message..."
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              required
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                border: '1px solid #D1D5DB',
+                borderRadius: 6,
+                fontSize: 14,
+                resize: 'vertical',
+                marginBottom: 12,
+                boxSizing: 'border-box'
+              }}
+            />
+            <button
+              type="submit"
+              disabled={sending || !message.trim()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: sending ? '#9CA3AF' : '#4F46E5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: sending ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <Send size={16} />
+              {sending ? 'Sending...' : 'Send Message'}
+            </button>
+          </form>
+        )}
 
         <div style={{
           marginTop: 40,
