@@ -605,14 +605,14 @@ export default function Leaderboard({ onBack, onSearchContracts }) {
             <p style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Trailing 12 months</p>
             <div style={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topByValue.slice(0, 10)} layout="vertical" margin={{ left: 20, right: 40 }}>
+                <BarChart data={topByValue.slice(0, 10)} layout="vertical" margin={{ left: 10, right: 40 }}>
                   <XAxis type="number" tickFormatter={formatDollars} />
                   <YAxis
                     type="category"
                     dataKey="name"
-                    width={180}
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(v) => truncateName(v, 25)}
+                    width={240}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => truncateName(v, 35)}
                   />
                   <Tooltip
                     formatter={(v) => formatDollars(v)}
@@ -686,14 +686,14 @@ export default function Leaderboard({ onBack, onSearchContracts }) {
             </p>
             <div style={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topSmallBiz.slice(0, 10)} layout="vertical" margin={{ left: 20, right: 40 }}>
+                <BarChart data={topSmallBiz.slice(0, 10)} layout="vertical" margin={{ left: 10, right: 40 }}>
                   <XAxis type="number" tickFormatter={formatDollars} />
                   <YAxis
                     type="category"
                     dataKey="name"
-                    width={180}
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(v) => truncateName(v, 25)}
+                    width={240}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => truncateName(v, 35)}
                   />
                   <Tooltip
                     formatter={(v) => formatDollars(v)}
@@ -764,14 +764,14 @@ export default function Leaderboard({ onBack, onSearchContracts }) {
               <>
                 <div style={{ height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={defenseTech} layout="vertical" margin={{ left: 20, right: 40 }}>
+                    <BarChart data={defenseTech} layout="vertical" margin={{ left: 10, right: 40 }}>
                       <XAxis type="number" tickFormatter={formatDollars} />
                       <YAxis
                         type="category"
                         dataKey="name"
-                        width={180}
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(v) => truncateName(v, 28)}
+                        width={200}
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v) => truncateName(v, 30)}
                       />
                       <Tooltip
                         formatter={(v) => formatDollars(v)}
