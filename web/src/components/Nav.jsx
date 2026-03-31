@@ -14,6 +14,10 @@ export default function Nav({ activePage, user, onHome, onNavigate }) {
           className={activePage === 'opportunities' ? 'active' : ''}
           onClick={() => onNavigate?.('opportunities')}
         >Open Opportunities</button>
+        <button
+          className={activePage === 'leaderboard' ? 'active' : ''}
+          onClick={() => onNavigate?.('leaderboard')}
+        >Leaderboard</button>
         <button onClick={() => onNavigate?.('api')}>API</button>
         {user ? (
           <>

@@ -12,6 +12,7 @@ import Jurisdictions from './pages/Jurisdictions'
 import Dashboard from './pages/Dashboard'
 import AIAssistant from './pages/AIAssistant'
 import AskAI from './pages/AskAI'
+import Leaderboard from './pages/Leaderboard'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -247,7 +248,7 @@ export default function App() {
       window.history.replaceState({ view: 'results' }, '', '/search')
     } else if (path !== '/' && path !== '') {
       const viewFromPath = path.slice(1)
-      if (['api', 'terms', 'admin', 'auth', 'credits', 'ai-assistant', 'ask-ai'].includes(viewFromPath)) {
+      if (['api', 'terms', 'admin', 'auth', 'credits', 'ai-assistant', 'ask-ai', 'leaderboard', 'dashboard'].includes(viewFromPath)) {
         setViewState(viewFromPath)
         window.history.replaceState({ view: viewFromPath }, '', path)
       }
@@ -295,6 +296,8 @@ export default function App() {
   const [filterNaics, setFilterNaics] = useState('')
   const [filterAgency, setFilterAgency] = useState('')
   const [filterDataSource, setFilterDataSource] = useState('')
+  const [filterMinDate, setFilterMinDate] = useState('')
+  const [searchTrigger, setSearchTrigger] = useState(0)  // Increment to force reload
   const [showFilters, setShowFilters] = useState(false)
   const PAGE_SIZE = 50
   const [totalContracts, setTotalContracts] = useState(0)
@@ -316,6 +319,7 @@ export default function App() {
     if (filterNaics) params.set('naics', filterNaics)
     if (filterSetAside) params.set('set_aside', filterSetAside)
     if (filterDataSource) params.set('data_source', filterDataSource)
+    if (filterMinDate) params.set('min_date', filterMinDate)
     if (query) params.set('q', query)
     Object.entries(extra).forEach(([k, v]) => params.set(k, v))
     return params.toString()
@@ -371,7 +375,7 @@ export default function App() {
     if (view === 'results') {
       loadData(false)
     }
-  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource])
+  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, filterMinDate, searchTrigger])
 
   // Deep-link support (on mount only)
   useEffect(() => {
@@ -433,16 +437,23 @@ export default function App() {
   const filteredContracts = contracts
   const filteredOpportunities = opportunities
 
-  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource
-  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource('') }
+  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource || filterMinDate
+  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource(''); setFilterMinDate('') }
 
   // History management for back button
   useEffect(() => {
-    const handlePopState = () => {
-      // On back button, return to list view
-      setView('list')
-      setSelectedOpp(null)
-      setSelectedContract(null)
+    const handlePopState = (event) => {
+      // Check if we should go back to leaderboard
+      if (event.state?.view === 'leaderboard') {
+        setView('leaderboard')
+        setFilterMinDate('')  // Clear leaderboard filter
+        setQuery('')
+      } else {
+        // Default: return to list view
+        setView('list')
+        setSelectedOpp(null)
+        setSelectedContract(null)
+      }
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
@@ -504,6 +515,7 @@ export default function App() {
     : view === 'results' ? activeTab
     : view === 'api' ? 'api'
     : view === 'terms' ? 'terms'
+    : view === 'leaderboard' ? 'leaderboard'
     : null
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -525,6 +537,7 @@ export default function App() {
             else if (page === 'auth') setView('auth')
             else if (page === 'ai-assistant') setView('ai-assistant')
             else if (page === 'ask-ai') setView('ask-ai')
+            else if (page === 'leaderboard') setView('leaderboard')
             else if (page === 'logout') handleLogout()
           }}
         />
@@ -569,6 +582,9 @@ export default function App() {
               </button>
               <button onClick={() => { setActiveTab('contracts'); goSearch() }}>
                 Browse Past Awards
+              </button>
+              <button onClick={() => setView('leaderboard')}>
+                Leaderboards
               </button>
             </div>
           </div>
@@ -913,7 +929,12 @@ export default function App() {
             {/* ── Contracts table ── */}
             {activeTab === 'contracts' && (
               <>
-                {filteredContracts.length === 0 ? (
+                {loading ? (
+                  <div className="empty-state">
+                    <div className="spinner" style={{ width: 32, height: 32, marginBottom: 16 }} />
+                    <p style={{ fontSize: 15, color: '#6B7280' }}>Loading contracts...</p>
+                  </div>
+                ) : filteredContracts.length === 0 ? (
                   <div className="empty-state">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
@@ -1041,6 +1062,19 @@ export default function App() {
       {view === 'auth' && <Auth onLogin={handleLogin} onHome={goHome} />}
       {view === 'ai-assistant' && <AIAssistant />}
       {view === 'ask-ai' && <AskAI />}
+      {view === 'leaderboard' && <Leaderboard onBack={goHome} onSearchContracts={(companyName) => {
+          // Set min_date to 365 days ago to match leaderboard trailing 12 months
+          const minDate = new Date()
+          minDate.setDate(minDate.getDate() - 365)
+          setFilterMinDate(minDate.toISOString().split('T')[0])
+          setQuery(companyName)
+          setContracts([])  // Clear so loading state shows
+          setLoading(true)  // Show loading immediately
+          setActiveTab('contracts')
+          setSearchTrigger(t => t + 1)  // Force reload with new query
+          window.history.pushState({ view: 'leaderboard' }, '', '/leaderboard')  // For back button
+          setView('results')
+        }} />}
     </div>
   )
 }

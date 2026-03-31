@@ -138,6 +138,108 @@ app.get('/api/stats', async (req, res) => {
   }
 })
 
+// ─── Contract Leaderboard ─────────────────────────────────
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    // Top contractors by total value (trailing 365 days)
+    const { rows: topByValue } = await pool.query(`
+      SELECT
+        recipient_name AS name,
+        COUNT(*) AS contract_count,
+        SUM(award_amount::numeric) AS total_value
+      FROM contracts
+      WHERE recipient_name IS NOT NULL
+        AND award_amount IS NOT NULL
+        AND start_date >= CURRENT_DATE - INTERVAL '365 days'
+      GROUP BY recipient_name
+      ORDER BY total_value DESC NULLS LAST
+      LIMIT 15
+    `)
+
+    // Top small businesses by contract count (trailing 365 days)
+    // Filter: has "Small Business" in categories but NOT "Not Designated", and under $500M total
+    // Note: Fast-growing companies may appear if they won small biz set-asides before outgrowing the threshold
+    const { rows: topSmallBusiness } = await pool.query(`
+      WITH company_totals AS (
+        SELECT
+          recipient_name AS name,
+          COUNT(*) AS contract_count,
+          SUM(award_amount::numeric) AS total_value
+        FROM contracts
+        WHERE recipient_name IS NOT NULL
+          AND award_amount IS NOT NULL
+          AND start_date >= CURRENT_DATE - INTERVAL '365 days'
+          AND business_categories::text ILIKE '%small business%'
+          AND business_categories::text NOT ILIKE '%not designated%'
+        GROUP BY recipient_name
+      )
+      SELECT name, contract_count, total_value
+      FROM company_totals
+      WHERE total_value < 500000000
+      ORDER BY total_value DESC
+      LIMIT 15
+    `)
+
+    // Defense tech startups (trailing 365 days) - consolidated by base company name
+    const { rows: defenseTech } = await pool.query(`
+      SELECT
+        CASE
+          WHEN UPPER(recipient_name) LIKE '%PALANTIR%' THEN 'PALANTIR'
+          WHEN UPPER(recipient_name) LIKE '%ANDURIL%' THEN 'ANDURIL'
+          WHEN UPPER(recipient_name) LIKE '%SHIELD AI%' THEN 'SHIELD AI'
+          WHEN UPPER(recipient_name) LIKE '%SKYDIO%' THEN 'SKYDIO'
+          WHEN UPPER(recipient_name) LIKE '%SARONIC%' THEN 'SARONIC'
+          WHEN UPPER(recipient_name) LIKE '%EPIRUS%' THEN 'EPIRUS'
+          WHEN UPPER(recipient_name) LIKE '%HADRIAN%' THEN 'HADRIAN'
+          WHEN UPPER(recipient_name) LIKE '%HERMEUS%' THEN 'HERMEUS'
+          WHEN UPPER(recipient_name) LIKE '%REBELLION%' THEN 'REBELLION'
+          WHEN UPPER(recipient_name) LIKE '%CHAOS INDUSTRIES%' THEN 'CHAOS'
+          ELSE recipient_name
+        END AS name,
+        COUNT(*) AS contract_count,
+        SUM(award_amount::numeric) AS total_value
+      FROM contracts
+      WHERE (
+        UPPER(recipient_name) LIKE '%ANDURIL%'
+        OR UPPER(recipient_name) LIKE '%PALANTIR%'
+        OR UPPER(recipient_name) LIKE '%SHIELD AI%'
+        OR UPPER(recipient_name) LIKE '%SKYDIO%'
+        OR UPPER(recipient_name) LIKE '%SARONIC%'
+        OR UPPER(recipient_name) LIKE '%EPIRUS%'
+        OR UPPER(recipient_name) LIKE '%HADRIAN%'
+        OR UPPER(recipient_name) LIKE '%HERMEUS%'
+        OR UPPER(recipient_name) LIKE '%REBELLION%'
+        OR UPPER(recipient_name) LIKE '%CHAOS INDUSTRIES%'
+      )
+      AND start_date >= CURRENT_DATE - INTERVAL '365 days'
+      GROUP BY 1
+      ORDER BY total_value DESC NULLS LAST
+    `)
+
+    res.json({
+      topByValue: topByValue.map(r => ({
+        name: r.name,
+        contract_count: parseInt(r.contract_count, 10),
+        total_value: parseFloat(r.total_value) || 0
+      })),
+      topSmallBusiness: topSmallBusiness.map(r => ({
+        name: r.name,
+        contract_count: parseInt(r.contract_count, 10),
+        total_value: parseFloat(r.total_value) || 0
+      })),
+      defenseTech: defenseTech.map(r => ({
+        name: r.name,
+        contract_count: parseInt(r.contract_count, 10),
+        total_value: parseFloat(r.total_value) || 0
+      })),
+      period: 'trailing_365_days'
+    })
+  } catch (e) {
+    console.error('[LEADERBOARD] Error:', e.message)
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
 // ─── NAICS search (for profile setup) ─────────────────────
 app.get('/api/naics/search', async (req, res) => {
   const { q } = req.query
@@ -1013,12 +1115,18 @@ app.get('/api/contracts', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200)
     const offset = parseInt(req.query.offset) || 0
-    const { state, agency, naics, set_aside, q, data_source } = req.query
+    const { state, agency, naics, set_aside, q, data_source, min_date } = req.query
 
     // Build WHERE clauses
     const conditions = []
     const params = []
     let paramIdx = 1
+
+    // Date filter (e.g. for leaderboard click-through to show only trailing 12 months)
+    if (min_date) {
+      conditions.push(`start_date >= $${paramIdx++}`)
+      params.push(min_date)
+    }
 
     if (state) {
       conditions.push(`recipient_state = $${paramIdx++}`)
