@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard'
 import AIAssistant from './pages/AIAssistant'
 import AskAI from './pages/AskAI'
 import Leaderboard from './pages/Leaderboard'
+import About from './pages/About'
 import { topAgencyLabel as topAgency } from './utils/agencyNorm'
 import { toTitleCase } from './utils/textNorm'
 import './index.css'
@@ -531,6 +532,7 @@ export default function App() {
             else if (page === 'opportunities') { setActiveTab('opportunities'); setView('results') }
             else if (page === 'api') setView('api')
             else if (page === 'terms') setView('terms')
+            else if (page === 'about') setView('about')
             else if (page === 'admin') setView('admin')
             else if (page === 'credits') setView('credits')
             else if (page === 'dashboard') setView('dashboard')
@@ -699,6 +701,8 @@ export default function App() {
               <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a>
               {' · '}
               <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a>
+              {' · '}
+              <a href="#" onClick={e => { e.preventDefault(); setView('about') }}>About</a>
             </span>
           </footer>
         </div>
@@ -1005,7 +1009,7 @@ export default function App() {
             <div className="container">
               <div className="footer-inner">
                 <span><strong>Awardopedia</strong> — Free federal contract intelligence for small businesses.</span>
-                <span>Data from USASpending.gov and SAM.gov · <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a> · <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a> · <a href="#" onClick={e => { e.preventDefault(); setView('admin') }}>Admin</a></span>
+                <span>Data from USASpending.gov and SAM.gov · <a href="#" onClick={e => { e.preventDefault(); setView('api') }}>API</a> · <a href="#" onClick={e => { e.preventDefault(); setView('terms') }}>Terms</a> · <a href="#" onClick={e => { e.preventDefault(); setView('about') }}>About</a> · <a href="#" onClick={e => { e.preventDefault(); setView('admin') }}>Admin</a></span>
               </div>
             </div>
           </footer>
@@ -1055,6 +1059,7 @@ export default function App() {
       {/* API & Terms */}
       {view === 'api' && <ApiKeys onBack={(target) => target === 'terms' ? setView('terms') : goHome()} />}
       {view === 'terms' && <Terms onBack={goHome} />}
+      {view === 'about' && <About onBack={goHome} />}
       {view === 'admin' && <Admin onBack={goHome} onJurisdictions={() => setView('jurisdictions')} />}
       {view === 'jurisdictions' && <Jurisdictions onBack={() => setView('admin')} />}
       {view === 'credits' && <Credits user={user} token={token} onBack={goHome} />}
