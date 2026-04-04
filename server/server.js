@@ -1413,14 +1413,15 @@ app.get('/api/proxy/attachment', async (req, res) => {
 app.post('/api/opportunities/:notice_id/report', authMiddleware, async (req, res) => {
   try {
     const { notice_id } = req.params
-    const { report_type, details, suggested_value } = req.body
+    const { report_type, details, suggested_value, suggested_fields } = req.body
     if (!report_type) return res.status(400).json({ error: 'report_type required' })
-    const validTypes = ['wrong_location', 'wrong_title', 'bad_summary', 'wrong_agency', 'other']
+    const validTypes = ['wrong_location', 'wrong_title', 'bad_summary', 'wrong_agency', 'other', 'edit_suggestion']
     if (!validTypes.includes(report_type)) return res.status(400).json({ error: 'invalid report_type' })
     await pool.query(
-      `INSERT INTO record_reports (notice_id, report_type, details, suggested_value, member_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [notice_id, report_type, details || null, suggested_value || null, req.user.id]
+      `INSERT INTO record_reports (notice_id, report_type, details, suggested_value, suggested_fields, member_id)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+      [notice_id, report_type, details || null, suggested_value || null,
+       suggested_fields ? JSON.stringify(suggested_fields) : null, req.user.id]
     )
     res.json({ ok: true })
   } catch (e) {
@@ -1432,7 +1433,9 @@ app.post('/api/opportunities/:notice_id/report', authMiddleware, async (req, res
 app.get('/api/admin/reports', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT r.*, o.title, o.agency_name, m.email AS member_email
+      SELECT r.id, r.notice_id, r.report_type, r.details,
+             r.suggested_value, r.suggested_fields, r.status,
+             r.created_at, o.title, o.agency_name, m.email AS member_email
       FROM record_reports r
       LEFT JOIN opportunities o USING (notice_id)
       LEFT JOIN members m ON m.id = r.member_id

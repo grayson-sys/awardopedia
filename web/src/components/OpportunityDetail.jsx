@@ -1111,7 +1111,7 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               </button>
             </div>
 
-            <ReportIssueButton noticeId={opp.notice_id} user={user} token={token} onSignIn={onSignIn} />
+            <SuggestEditForm opp={opp} user={user} token={token} onSignIn={onSignIn} />
             <FeedbackForm noticeId={opp.notice_id} />
           </div>
         </div>
@@ -1120,43 +1120,46 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
   )
 }
 
-const REPORT_TYPE_LABELS = {
-  wrong_location: 'Wrong location / state',
-  wrong_title:    'Title is garbled or wrong',
-  bad_summary:    'Summary is inaccurate or unhelpful',
-  wrong_agency:   'Wrong agency',
-  other:          'Something else',
+const EDITABLE_FIELDS = [
+  { key: 'title',                       label: 'Title',          type: 'input' },
+  { key: 'llama_summary',               label: 'Summary',        type: 'textarea', rows: 4 },
+  { key: 'agency_name',                 label: 'Agency',         type: 'input' },
+  { key: 'place_of_performance_city',   label: 'City',           type: 'input' },
+  { key: 'place_of_performance_state',  label: 'State',          type: 'input', placeholder: 'e.g. NM' },
+]
+
+const inputStyle = {
+  width: '100%', padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
+  border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
+  background: 'var(--color-surface)', outline: 'none', boxSizing: 'border-box',
 }
 
-const SUGGESTION_PLACEHOLDERS = {
-  wrong_location: 'Correct state or city (e.g. "New Mexico" or "Albuquerque, NM")',
-  wrong_title:    'What the title should say',
-  bad_summary:    'What this contract is actually about',
-  wrong_agency:   'Correct agency name',
-  other:          'Suggested correction',
-}
-
-function ReportIssueButton({ noticeId, user, token, onSignIn }) {
+function SuggestEditForm({ opp, user, token, onSignIn }) {
   const [open, setOpen] = useState(false)
-  const [reportType, setReportType] = useState('')
-  const [suggestedValue, setSuggestedValue] = useState('')
-  const [details, setDetails] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [explanation, setExplanation] = useState('')
+
+  const original = Object.fromEntries(EDITABLE_FIELDS.map(f => [f.key, opp[f.key] || '']))
+  const [fields, setFields] = useState({ ...original })
+
+  const changed = Object.fromEntries(
+    Object.entries(fields).filter(([k, v]) => v.trim() !== (original[k] || '').trim())
+  )
+  const hasChanges = Object.keys(changed).length > 0
+
+  function setField(key, val) { setFields(prev => ({ ...prev, [key]: val })) }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!reportType || !user) return
+    if ((!hasChanges && !explanation.trim()) || !user) return
     try {
-      await fetch(`/api/opportunities/${noticeId}/report`, {
+      await fetch(`/api/opportunities/${opp.notice_id}/report`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
-          report_type: reportType,
-          suggested_value: suggestedValue || null,
-          details: details || null,
+          report_type: 'edit_suggestion',
+          suggested_fields: hasChanges ? changed : null,
+          details: explanation.trim() || null,
         }),
       })
       setSubmitted(true)
@@ -1165,67 +1168,81 @@ function ReportIssueButton({ noticeId, user, token, onSignIn }) {
 
   if (submitted) {
     return (
-      <div className="card mt-16" style={{ padding: '12px 16px' }}>
-        <span style={{ fontSize: 13, color: 'var(--color-success)', fontWeight: 600 }}>
-          ✓ Suggestion received — we'll review and fix it.
-        </span>
+      <div className="card mt-16" style={{ padding: '14px 16px' }}>
+        <div style={{ fontSize: 13, color: 'var(--color-success)', fontWeight: 600 }}>
+          ✓ Edit suggestion received — we'll review and apply it.
+        </div>
+        <div className="text-muted text-sm mt-4">Thanks for helping improve this record.</div>
       </div>
     )
   }
 
   return (
-    <div className="card mt-16" style={{ padding: '12px 16px' }}>
+    <div className="card mt-16" style={{ padding: '14px 16px' }}>
       {!open ? (
         <button
           onClick={() => user ? setOpen(true) : onSignIn && onSignIn()}
           style={{ background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 12, color: 'var(--color-muted)', padding: 0 }}
         >
-          🚩 {user ? 'Suggest a correction' : 'Sign in to suggest a correction'}
+          ✏️ {user ? 'Suggest an edit to this record' : 'Sign in to suggest an edit'}
         </button>
       ) : (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Suggest a correction</div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Suggest an edit</span>
+            <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
+              Change any field below — only your edits will be submitted
+            </span>
+          </div>
 
-          <select
-            value={reportType}
-            onChange={e => { setReportType(e.target.value); setSuggestedValue('') }}
-            required
-            style={{ padding: '7px 10px', fontSize: 13, border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius)', background: 'var(--color-surface)', outline: 'none' }}
-          >
-            <option value="">What needs fixing?</option>
-            {Object.entries(REPORT_TYPE_LABELS).map(([val, label]) => (
-              <option key={val} value={val}>{label}</option>
-            ))}
-          </select>
+          {EDITABLE_FIELDS.map(({ key, label, type, rows, placeholder }) => (
+            <div key={key}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>
+                {label}
+                {changed[key] !== undefined && (
+                  <span style={{ color: 'var(--color-warning)', marginLeft: 6 }}>edited</span>
+                )}
+              </div>
+              {type === 'textarea' ? (
+                <textarea
+                  value={fields[key]} rows={rows || 3}
+                  onChange={e => setField(key, e.target.value)}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                />
+              ) : (
+                <input
+                  type="text" value={fields[key]}
+                  placeholder={placeholder || ''}
+                  onChange={e => setField(key, e.target.value)}
+                  style={inputStyle}
+                />
+              )}
+            </div>
+          ))}
 
-          {reportType && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-muted)',
+              textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>
+              Explanation <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional — what's wrong and how do you know?)</span>
+            </div>
             <textarea
-              value={suggestedValue}
-              onChange={e => setSuggestedValue(e.target.value)}
-              placeholder={SUGGESTION_PLACEHOLDERS[reportType]}
-              rows={2}
-              style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
-                border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
-                resize: 'vertical', outline: 'none' }}
+              value={explanation} rows={2}
+              onChange={e => setExplanation(e.target.value)}
+              placeholder='e.g. "The PDF says the project is in New Mexico — the contracting office is in Salt Lake City but the work site is in Pojoaque, NM"'
+              style={{ ...inputStyle, resize: 'vertical' }}
             />
-          )}
-
-          <textarea
-            value={details} onChange={e => setDetails(e.target.value)}
-            placeholder="Any other context (optional)"
-            rows={2}
-            style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
-              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
-              resize: 'vertical', outline: 'none' }}
-          />
+          </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button type="submit" className="btn btn-ghost btn-sm" disabled={!reportType}>
-              Submit
+            <button
+              type="submit" className="btn btn-ghost btn-sm"
+              disabled={!hasChanges && !explanation.trim()}
+            >
+              Submit {hasChanges ? `(${Object.keys(changed).length} field${Object.keys(changed).length > 1 ? 's' : ''} changed)` : ''}
             </button>
-            <button type="button" onClick={() => setOpen(false)}
+            <button type="button" onClick={() => { setOpen(false); setFields({ ...original }); setExplanation('') }}
               style={{ background: 'none', border: 'none', cursor: 'pointer',
                 fontSize: 12, color: 'var(--color-muted)' }}>
               Cancel
