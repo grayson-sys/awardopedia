@@ -1111,10 +1111,96 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               </button>
             </div>
 
+            <ReportIssueButton noticeId={opp.notice_id} />
             <FeedbackForm noticeId={opp.notice_id} />
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ReportIssueButton({ noticeId }) {
+  const [open, setOpen] = useState(false)
+  const [reportType, setReportType] = useState('')
+  const [details, setDetails] = useState('')
+  const [email, setEmail] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!reportType) return
+    try {
+      await fetch(`/api/opportunities/${noticeId}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_type: reportType, details, reporter_email: email }),
+      })
+      setSubmitted(true)
+    } catch {}
+  }
+
+  if (submitted) {
+    return (
+      <div className="card mt-16" style={{ padding: '12px 16px' }}>
+        <span style={{ fontSize: 13, color: 'var(--color-success)', fontWeight: 600 }}>
+          ✓ Report received — we'll investigate and fix it.
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card mt-16" style={{ padding: '12px 16px' }}>
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 12, color: 'var(--color-muted)', padding: 0 }}
+        >
+          🚩 Report an issue with this record
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Report an issue</div>
+          <select
+            value={reportType} onChange={e => setReportType(e.target.value)} required
+            style={{ padding: '7px 10px', fontSize: 13, border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius)', background: 'var(--color-surface)', outline: 'none' }}
+          >
+            <option value="">What's wrong?</option>
+            <option value="wrong_location">Wrong location / state</option>
+            <option value="wrong_title">Title is garbled or wrong</option>
+            <option value="bad_summary">Summary is inaccurate or unhelpful</option>
+            <option value="wrong_agency">Wrong agency</option>
+            <option value="other">Something else</option>
+          </select>
+          <textarea
+            value={details} onChange={e => setDetails(e.target.value)}
+            placeholder="Any additional details (optional)"
+            rows={2}
+            style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
+              resize: 'vertical', outline: 'none' }}
+          />
+          <input
+            type="email" value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="Email (optional — if you want us to follow up)"
+            style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', outline: 'none' }}
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button type="submit" className="btn btn-ghost btn-sm" disabled={!reportType}>
+              Submit
+            </button>
+            <button type="button" onClick={() => setOpen(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 12, color: 'var(--color-muted)' }}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   )
 }

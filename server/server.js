@@ -1409,6 +1409,42 @@ app.get('/api/proxy/attachment', async (req, res) => {
   }
 })
 
+// ─── Record reports (user-submitted corrections) ──────────
+app.post('/api/opportunities/:notice_id/report', async (req, res) => {
+  try {
+    const { notice_id } = req.params
+    const { report_type, details, reporter_email } = req.body
+    if (!report_type) return res.status(400).json({ error: 'report_type required' })
+    const validTypes = ['wrong_location', 'wrong_title', 'bad_summary', 'wrong_agency', 'other']
+    if (!validTypes.includes(report_type)) return res.status(400).json({ error: 'invalid report_type' })
+    await pool.query(
+      `INSERT INTO record_reports (notice_id, report_type, details, reporter_email)
+       VALUES ($1, $2, $3, $4)`,
+      [notice_id, report_type, details || null, reporter_email || null]
+    )
+    res.json({ ok: true })
+  } catch (e) {
+    console.error('report error:', e)
+    res.status(500).json({ error: 'Failed to save report' })
+  }
+})
+
+app.get('/api/admin/reports', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT r.*, o.title, o.agency_name
+      FROM record_reports r
+      LEFT JOIN opportunities o USING (notice_id)
+      WHERE r.status = 'pending'
+      ORDER BY r.created_at DESC
+      LIMIT 50
+    `)
+    res.json({ data: rows, count: rows.length })
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch reports' })
+  }
+})
+
 // ─── Report: load cached ──────────────────────────────────
 app.get('/api/reports/contract/:piid', async (req, res) => {
   try {
