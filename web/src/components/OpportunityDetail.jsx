@@ -1120,9 +1120,26 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
   )
 }
 
+const REPORT_TYPE_LABELS = {
+  wrong_location: 'Wrong location / state',
+  wrong_title:    'Title is garbled or wrong',
+  bad_summary:    'Summary is inaccurate or unhelpful',
+  wrong_agency:   'Wrong agency',
+  other:          'Something else',
+}
+
+const SUGGESTION_PLACEHOLDERS = {
+  wrong_location: 'Correct state or city (e.g. "New Mexico" or "Albuquerque, NM")',
+  wrong_title:    'What the title should say',
+  bad_summary:    'What this contract is actually about',
+  wrong_agency:   'Correct agency name',
+  other:          'Suggested correction',
+}
+
 function ReportIssueButton({ noticeId }) {
   const [open, setOpen] = useState(false)
   const [reportType, setReportType] = useState('')
+  const [suggestedValue, setSuggestedValue] = useState('')
   const [details, setDetails] = useState('')
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -1134,7 +1151,12 @@ function ReportIssueButton({ noticeId }) {
       await fetch(`/api/opportunities/${noticeId}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report_type: reportType, details, reporter_email: email }),
+        body: JSON.stringify({
+          report_type: reportType,
+          suggested_value: suggestedValue || null,
+          details: details || null,
+          reporter_email: email || null,
+        }),
       })
       setSubmitted(true)
     } catch {}
@@ -1144,7 +1166,7 @@ function ReportIssueButton({ noticeId }) {
     return (
       <div className="card mt-16" style={{ padding: '12px 16px' }}>
         <span style={{ fontSize: 13, color: 'var(--color-success)', fontWeight: 600 }}>
-          ✓ Report received — we'll investigate and fix it.
+          ✓ Suggestion received — we'll review and fix it.
         </span>
       </div>
     )
@@ -1158,37 +1180,53 @@ function ReportIssueButton({ noticeId }) {
           style={{ background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 12, color: 'var(--color-muted)', padding: 0 }}
         >
-          🚩 Report an issue with this record
+          🚩 Suggest a correction
         </button>
       ) : (
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Report an issue</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Suggest a correction</div>
+
           <select
-            value={reportType} onChange={e => setReportType(e.target.value)} required
+            value={reportType}
+            onChange={e => { setReportType(e.target.value); setSuggestedValue('') }}
+            required
             style={{ padding: '7px 10px', fontSize: 13, border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius)', background: 'var(--color-surface)', outline: 'none' }}
           >
-            <option value="">What's wrong?</option>
-            <option value="wrong_location">Wrong location / state</option>
-            <option value="wrong_title">Title is garbled or wrong</option>
-            <option value="bad_summary">Summary is inaccurate or unhelpful</option>
-            <option value="wrong_agency">Wrong agency</option>
-            <option value="other">Something else</option>
+            <option value="">What needs fixing?</option>
+            {Object.entries(REPORT_TYPE_LABELS).map(([val, label]) => (
+              <option key={val} value={val}>{label}</option>
+            ))}
           </select>
+
+          {reportType && (
+            <textarea
+              value={suggestedValue}
+              onChange={e => setSuggestedValue(e.target.value)}
+              placeholder={SUGGESTION_PLACEHOLDERS[reportType]}
+              rows={2}
+              style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
+                border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
+                resize: 'vertical', outline: 'none' }}
+            />
+          )}
+
           <textarea
             value={details} onChange={e => setDetails(e.target.value)}
-            placeholder="Any additional details (optional)"
+            placeholder="Any other context (optional)"
             rows={2}
             style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
               resize: 'vertical', outline: 'none' }}
           />
+
           <input
             type="email" value={email} onChange={e => setEmail(e.target.value)}
             placeholder="Email (optional — if you want us to follow up)"
             style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', outline: 'none' }}
           />
+
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button type="submit" className="btn btn-ghost btn-sm" disabled={!reportType}>
               Submit
