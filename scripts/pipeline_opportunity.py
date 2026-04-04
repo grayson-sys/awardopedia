@@ -1005,10 +1005,25 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
     # ── Award Notice: deterministic summary, no AI call ───────────────────
     if fields.get('notice_type') == 'Award Notice':
         log(6, notice_id, "Award Notice — deterministic summary (skipping AI)")
-        rec['ai_summary'] = _award_notice_summary(fields)
+        result = _award_notice_summary(fields)
+        rec['ai_summary'] = result
         # Clear extracted fields so garbled addresses don't bleed into the stored text
         rec['det_extract'] = {}
         rec['ai_extract'] = {}
+        # Write clean title back to DB if the original was garbled
+        clean_title = result.get('clean_title')
+        if clean_title and clean_title != fields.get('title') and not dry_run:
+            try:
+                conn = db_connect()
+                conn.autocommit = True
+                conn.cursor().execute(
+                    "UPDATE opportunities SET title = %s WHERE notice_id = %s",
+                    [clean_title, notice_id]
+                )
+                conn.close()
+                log(6, notice_id, f"Title fixed: {fields.get('title','')[:40]} → {clean_title[:40]}")
+            except Exception as e:
+                log(6, notice_id, f"Title update failed: {e}")
         return rec
 
     if dry_run:
