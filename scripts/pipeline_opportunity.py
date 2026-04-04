@@ -65,7 +65,7 @@ from fetch_opportunity import parse_opportunity, upsert_opportunity
 DATABASE_URL     = os.environ.get('DATABASE_URL', '')
 SAM_API_KEY      = os.environ.get('SAM_API_KEY', '')
 CLAUDE_PROXY_URL = os.environ.get('CLAUDE_PROXY_URL', 'http://localhost:3456')
-CLAUDE_MODEL     = 'claude-sonnet-4'
+CLAUDE_MODEL     = 'claude-haiku-4'  # Haiku for speed/cost; Sonnet for quality
 
 BASE_DIR    = Path(__file__).parent.parent
 DATA_DIR    = BASE_DIR / 'data'
@@ -828,7 +828,6 @@ Agency: {agency}
 NAICS: {naics_code} — {naics_description}
 Set-aside: {set_aside}
 Location: {city}, {state}
-Posted: {posted} | Deadline: {deadline}
 CO: {co_name} | {co_email} | {co_phone}
 
 ALREADY EXTRACTED (do not contradict):
@@ -847,15 +846,26 @@ DOCUMENT TEXT ({pdf_count} PDFs):
 
 INSTRUCTIONS:
 
-1. clean_title: Extract the actual descriptive title. Remove: solicitation numbers (e.g., "Solicitation No. 693JK426R500001"), contract codes (36C..., W912...), project numbers, RFQ/RFP prefixes. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Fix ALL CAPS to Title Case. Example: "Catering Solicitation No. 693JK426R500001 for DOT Secretary's 58th Annual Awards Ceremony" → "DOT Secretary's 58th Annual Awards Ceremony Catering". MUST be just the clean title — no quotes, no preamble.
+1. clean_title: Create a plain-English headline a business owner can understand at a glance.
+   - DECODE all acronyms and codes: airport codes (EWR→Newark Liberty, LAX→Los Angeles), FAA terms (ATCT→Air Traffic Control Tower, TRACON→Terminal Radar Approach Control), military (CONUS→Continental US, OCONUS→Outside Continental US, DFAC→Dining Facility), agency abbreviations (TSS→thermal/technical systems).
+   - REMOVE: solicitation numbers, contract codes (36C..., W912...), project numbers, RFQ/RFP prefixes, dates, periods (Base YR, Option Year, FY26, +4 OYs).
+   - EXPAND: SVCS→Services, MAINT→Maintenance, EQUIP→Equipment, CONSTR→Construction, RENO→Renovation, HVAC, IT, etc.
+   - Convert ALL CAPS to Title Case.
+   - Example: "TSS Ductless System at EWR ATCT" → "Ductless HVAC System Installation at Newark Liberty Airport Air Traffic Control Tower"
+   - JUST the title. No quotes, no preamble, no "Here is...".
 
-2. summary: Write 2-3 plain sentences describing what the government is buying and what work the contractor will perform. Be conservative — only state facts from the document. CRITICAL: Write as if the reader is viewing this months or years later. NEVER mention deadlines, dates, urgency, or time-sensitivity. Forbidden phrases: "days away", "deadline", "closes on", "due date", "upcoming", "soon", "urgent", "tight timeline", "time is", "act fast". Do not repeat data from other fields (address, dollars, set-aside).
+2. summary: Write 2-3 plain sentences a business owner would understand.
+   - Explain WHAT the government is buying and WHAT work the contractor will do.
+   - Decode jargon: explain technical terms in parentheses if needed.
+   - TIMELESS WRITING: This text will be read months or years later. NEVER mention any dates, deadlines, timelines, or urgency. No "closes April 15", no "deadline", no "days away", no "soon", no "upcoming", no "act fast". Write as permanent reference text.
+   - Do not repeat address, dollars, or set-aside (those display separately).
+   - Start directly with the content. FORBIDDEN: "Here is", "The following", "This contract", "This opportunity".
 
-3. key_requirements: List up to 5 bid barriers or unusual requirements (certifications, clearances, equipment, tight timelines). Skip boilerplate FAR clauses.
+3. key_requirements: Up to 5 unusual bid barriers (certifications, clearances, bonds, equipment). Skip standard FAR clauses.
 
-Return ONLY this JSON object — no markdown, no explanation, no preamble:
+RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble whatsoever:
 
-{{"clean_title": "Cleaned Title Here", "summary": "Summary text here.", "key_requirements": ["requirement 1", "requirement 2"]}}"""
+{{"clean_title": "Plain English Title", "summary": "Plain English summary without dates.", "key_requirements": ["requirement 1"]}}"""
 
 SUMMARY_PROMPT_NO_PDF = """You are a federal contracting analyst. Return a JSON object based on this metadata.
 
@@ -866,19 +876,121 @@ Industry: {naics} — {naics_description}
 Set-aside: {set_aside}
 Notice type: {notice_type}
 Location: {city}, {state}
-Deadline: {deadline}
 
 INSTRUCTIONS:
 
-1. clean_title: Extract the actual descriptive title. Remove solicitation numbers (Solicitation No. XXX), contract codes (36C..., W912...), project numbers, RFQ/RFP prefixes. Expand abbreviations (SVCS→Services, MAINT→Maintenance). Fix ALL CAPS to Title Case. MUST be just the clean title — no quotes, no preamble.
+1. clean_title: Create a plain-English headline a business owner can understand.
+   - DECODE all acronyms: airport codes (EWR→Newark, LAX→Los Angeles), FAA (ATCT→Air Traffic Control Tower), military (DFAC→Dining Facility, CONUS→Continental US).
+   - REMOVE: solicitation numbers, contract codes, project IDs, dates, periods (Base YR, Option Year, FY26).
+   - EXPAND: SVCS→Services, MAINT→Maintenance, EQUIP→Equipment, CONSTR→Construction.
+   - ALL CAPS → Title Case.
+   - JUST the title. No quotes, no "Here is...", no preamble.
 
-2. summary: Write 2-3 plain sentences. What is the government buying? Who is this for (mention set-aside if any)? CRITICAL: Write as if the reader is viewing this months or years later. NEVER mention deadlines, dates, urgency. Forbidden phrases: "days away", "deadline", "closes on", "due date", "upcoming", "soon", "urgent", "tight". Do not repeat address, dollars, or set-aside type.
+2. summary: Write 2-3 plain sentences explaining what the government is buying.
+   - TIMELESS: NEVER mention dates, deadlines, urgency. No "closes on", no "deadline", no "soon". Write as permanent reference.
+   - Start directly. FORBIDDEN: "Here is", "The following", "This opportunity".
 
-3. key_requirements: Based on the NAICS/industry, list 1-2 typical requirements for this type of work. If unsure, return empty array.
+3. key_requirements: Based on the industry, list 1-2 typical requirements. Empty array if unsure.
 
-Return ONLY this JSON object — no markdown, no explanation:
+RESPOND WITH ONLY THIS JSON — no markdown, no preamble:
 
-{{"clean_title": "Cleaned Title", "summary": "Summary here.", "key_requirements": []}}"""
+{{"clean_title": "Plain English Title", "summary": "Summary without dates.", "key_requirements": []}}"""
+
+
+# ── Award Notice deterministic handler ──────────────────────────────────────
+
+def _is_garbled_title(title: str, sol_num: str = '') -> bool:
+    """Return True if title is a solicitation number, part number, or otherwise machine-generated."""
+    if not title or len(title) < 3:
+        return True
+    # Solicitation number used verbatim as title
+    if sol_num and sol_num.strip().lower() in title.lower():
+        return True
+    # Underscores with no lowercase = filename/part number
+    if '_' in title and not any(c.islower() for c in title):
+        return True
+    # All-uppercase short phrase (e.g. "3 NSNs FOR FSC 3110")
+    words = title.split()
+    if len(words) <= 5 and all(
+        w.isupper() or w.replace('-', '').replace(',', '').replace('/', '').isupper()
+        for w in words if len(w) > 1
+    ):
+        return True
+    # Contains NSN / FSC / PIID with few words
+    if re.search(r'\b(NSN|FSC|PIID|NZ|PN)\b', title) and len(words) <= 6:
+        return True
+    return False
+
+
+def _award_notice_summary(fields: dict) -> dict:
+    """
+    Build a deterministic plain-English summary for Award Notices — no AI call.
+    These are completed contracts; there's nothing to bid on. We just describe
+    what was awarded, to whom, where, and for how much.
+    """
+    agency      = (fields.get('agency_name', '')      or '').strip()
+    sub_agency  = (fields.get('sub_agency_name', '')  or '').strip()
+    naics_desc  = (fields.get('naics_description', '') or '').strip()
+    title       = (fields.get('title', '')            or '').strip()
+    sol_num     = (fields.get('solicitation_number', '') or '').strip()
+    state       = (fields.get('place_of_performance_state', '') or '').strip()
+    city        = (fields.get('place_of_performance_city', '')  or '').strip()
+    set_aside   = (fields.get('set_aside_type', '')   or '').strip()
+    val_max     = fields.get('estimated_value_max')
+
+    # Clean title — replace garbled titles with NAICS + agency
+    if _is_garbled_title(title, sol_num) and naics_desc:
+        display_ag = sub_agency or agency
+        clean_title = f"{naics_desc} — {display_ag}"
+    else:
+        clean_title = title
+
+    # Display agency: prefer sub-agency when it differs
+    display_ag = (sub_agency if sub_agency and sub_agency != agency else agency)
+
+    # Location string
+    loc_parts = [p for p in [city, state] if p]
+    location   = ', '.join(loc_parts) if loc_parts else ''
+
+    # Value string
+    value_str = ''
+    try:
+        if val_max and float(val_max) > 0:
+            v = float(val_max)
+            if v >= 1_000_000:
+                value_str = f'${v / 1_000_000:.1f}M'
+            elif v >= 1_000:
+                value_str = f'${v / 1_000:.0f}K'
+            else:
+                value_str = f'${v:,.0f}'
+    except (ValueError, TypeError):
+        pass
+
+    # Set-aside string
+    open_comp = {'', 'none', 'full & open competition', 'full and open competition',
+                 'full and open after exclusion of sources'}
+    set_aside_str = f' Awarded as a {set_aside} contract.' if set_aside.lower() not in open_comp else ''
+
+    # Build 1-2 sentence summary
+    industry = naics_desc.lower() if naics_desc else 'services'
+    s1 = f"The {display_ag} awarded a contract for {industry}"
+    if location:
+        s1 += f" at {location}"
+    s1 += '.'
+
+    s2 = ''
+    if value_str:
+        s2 = f"Estimated contract value: {value_str}.{set_aside_str}"
+    elif set_aside_str:
+        s2 = set_aside_str.strip()
+
+    summary = ' '.join(p for p in [s1, s2] if p)
+
+    return {
+        'clean_title': clean_title,
+        'summary': summary,
+        'key_requirements': [],  # Bidding closed — no requirements to surface
+    }
 
 
 def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
@@ -889,6 +1001,15 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
     notice_id = rec['notice_id']
     fields = rec.get('fields', {})
     combined_text = rec.get('combined_text', '')
+
+    # ── Award Notice: deterministic summary, no AI call ───────────────────
+    if fields.get('notice_type') == 'Award Notice':
+        log(6, notice_id, "Award Notice — deterministic summary (skipping AI)")
+        rec['ai_summary'] = _award_notice_summary(fields)
+        # Clear extracted fields so garbled addresses don't bleed into the stored text
+        rec['det_extract'] = {}
+        rec['ai_extract'] = {}
+        return rec
 
     if dry_run:
         log(6, notice_id, "[DRY] Would generate AI summary")
@@ -915,8 +1036,6 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
             set_aside=fields.get('set_aside_type', 'None'),
             state=fields.get('place_of_performance_state', ''),
             city=fields.get('place_of_performance_city', ''),
-            posted=str(fields.get('posted_date', '')),
-            deadline=str(fields.get('response_deadline', '')),
             co_name=fields.get('contracting_officer', ''),
             co_email=fields.get('contracting_officer_email', ''),
             co_phone=fields.get('contracting_officer_phone', ''),
@@ -956,7 +1075,6 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
             notice_type=fields.get('notice_type', 'Solicitation'),
             city=fields.get('place_of_performance_city', ''),
             state=fields.get('place_of_performance_state', ''),
-            deadline=str(fields.get('response_deadline', '')),
         )
         try:
             result, tokens = call_claude_json(prompt)
@@ -1039,6 +1157,27 @@ def _to_title_case(s: str) -> str:
     )
 
 
+def _normalize_agency_segment(seg: str) -> str:
+    """
+    Normalize a SAM.gov agency segment for tree lookup.
+    Handles abbreviations like 'DEPT OF' → 'department of'.
+    Returns lowercase for comparison with name_normalized.
+    """
+    s = seg.lower().strip()
+
+    # Common SAM.gov abbreviations → full names
+    s = re.sub(r'^dept\s+of\s+the\s+', 'department of the ', s)
+    s = re.sub(r'^dept\s+of\s+', 'department of ', s)
+    s = re.sub(r'\bdla\b', 'defense logistics agency', s)
+    s = re.sub(r'\bdha\b', 'defense health agency', s)
+    s = re.sub(r'\bdcma\b', 'defense contract management agency', s)
+    s = re.sub(r'\bnavsup\b', 'naval supply systems command', s)
+    s = re.sub(r'\bnavfac\b', 'naval facilities engineering command', s)
+    s = re.sub(r'\busace\b', 'us army corps of engineers', s)
+
+    return s.strip()
+
+
 def _uninvert_agency(raw: str) -> str:
     """Uninvert SAM.gov inverted agency names to normal format."""
     if not raw:
@@ -1082,10 +1221,45 @@ def normalize_agency(raw: str) -> str:
     return AGENCY_ABBREV.get(normal, normal)
 
 
+def _clean_contracting_officer(fields: dict) -> dict:
+    """
+    Parse phone/email stuffed into contracting_officer name field.
+    Pattern: "NAME, CODE, PHONE (XXX)XXX-XXXX, EMAIL EMAIL@DOMAIN"
+    Returns dict with cleaned name, phone, email.
+    """
+    co = fields.get('contracting_officer', '')
+    if not co or ('PHONE' not in co.upper() and not re.search(r'\(\d{3}\)', co)):
+        return {}
+
+    updates = {}
+
+    # Extract phone: (XXX)XXX-XXXX or XXX-XXX-XXXX
+    phone_match = re.search(r'\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})', co)
+    if phone_match and not fields.get('contracting_officer_phone'):
+        updates['contracting_officer_phone'] = f'({phone_match.group(1)}){phone_match.group(2)}-{phone_match.group(3)}'
+
+    # Extract email
+    email_match = re.search(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', co)
+    if email_match and not fields.get('contracting_officer_email'):
+        updates['contracting_officer_email'] = email_match.group(0)
+
+    # Clean name: remove PHONE/EMAIL parts and office codes
+    clean_name = re.sub(r',?\s*PHONE\s*\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', '', co, flags=re.IGNORECASE)
+    clean_name = re.sub(r',?\s*EMAIL\s*[\w.+-]+@[\w.-]+', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r',\s*[A-Z]\d+\.\d+', '', clean_name)  # Remove codes like N774.9
+    clean_name = clean_name.strip().strip(',').strip()
+
+    if clean_name != co:
+        updates['contracting_officer'] = clean_name
+
+    return updates
+
+
 def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
     """
     NAICS/PSC canonical lookups from DB tables.
     Agency name normalization (Python port of agencyNorm.js).
+    Contracting officer field cleanup.
     """
     notice_id = rec['notice_id']
     fields = rec.get('fields', {})
@@ -1095,6 +1269,12 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
         log(7, notice_id, "[DRY] Would enrich NAICS/PSC/agency")
         rec['enrichment'] = {}
         return rec
+
+    # Clean contracting officer field if phone/email stuffed in name
+    co_updates = _clean_contracting_officer(fields)
+    if co_updates:
+        enrichment.update(co_updates)
+        log(7, notice_id, f"CO cleaned: {fields.get('contracting_officer','')[:30]} → {co_updates.get('contracting_officer','')[:30]}")
 
     conn = db_connect()
     cur = conn.cursor()
@@ -1165,7 +1345,7 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
     agency_tree_id = None
     if raw_hierarchy:
         # Walk the tree to find deepest matching node
-        segments = [s.strip().lower() for s in raw_hierarchy.split('.')]
+        segments = [_normalize_agency_segment(s.strip()) for s in raw_hierarchy.split('.')]
 
         # Start at level 1 (department)
         cur.execute(
@@ -1300,6 +1480,7 @@ Context clues:
 Return ONLY a JSON object with these fields (no markdown, no explanation):
 {{
   "full_name": "The full human-readable office name",
+  "street_address": "Full street address (e.g. '5000 Wissahickon Ave, Philadelphia, PA 19144') or null if unknown",
   "city": "City where the office is located (or null)",
   "state": "2-letter state code (or null for overseas)",
   "country": "Country name (default USA)",
@@ -1318,11 +1499,11 @@ If you're not confident, give your best guess based on the code pattern and agen
 def _resolve_office_code(code: str, fields: dict, cur, conn) -> Optional[dict]:
     """
     Look up an office code. Check DB first; if not found, ask Claude once and cache forever.
-    Returns dict with full_name, city, state, country, parent_agency — or None.
+    Returns dict with full_name, street_address, city, state, country, parent_agency — or None.
     """
     # Check if office_codes table exists (graceful degradation before migration)
     try:
-        cur.execute("SELECT full_name, city, state, country, parent_agency FROM office_codes WHERE code = %s", [code])
+        cur.execute("SELECT full_name, street_address, city, state, country, parent_agency FROM office_codes WHERE code = %s", [code])
     except Exception:
         conn.rollback()
         return None
@@ -1331,10 +1512,11 @@ def _resolve_office_code(code: str, fields: dict, cur, conn) -> Optional[dict]:
     if row:
         return {
             'full_name': row[0],
-            'city': row[1],
-            'state': row[2],
-            'country': row[3],
-            'parent_agency': row[4],
+            'street_address': row[1],
+            'city': row[2],
+            'state': row[3],
+            'country': row[4],
+            'parent_agency': row[5],
         }
 
     # Not in table — ask Claude
@@ -1360,14 +1542,15 @@ def _resolve_office_code(code: str, fields: dict, cur, conn) -> Optional[dict]:
 
         # Cache permanently
         cur.execute("""
-            INSERT INTO office_codes (code, agency_code, abbreviation, full_name, city, state, country, parent_agency, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'ai')
+            INSERT INTO office_codes (code, agency_code, abbreviation, full_name, street_address, city, state, country, parent_agency, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'ai')
             ON CONFLICT (code) DO NOTHING
         """, [
             code,
             code[:3] if len(code) >= 3 else code,
             abbreviation or None,
             full_name,
+            result.get('street_address'),
             result.get('city'),
             result.get('state'),
             result.get('country', 'USA'),
@@ -2125,6 +2308,7 @@ def _load_existing_records(args) -> list:
         limit_clause = f"LIMIT {args.limit}" if args.limit else ""
         cur.execute(f"""
             SELECT * FROM opportunities
+            WHERE response_deadline >= CURRENT_DATE OR response_deadline IS NULL
             ORDER BY response_deadline ASC NULLS LAST
             {limit_clause}
         """)

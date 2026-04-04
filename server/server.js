@@ -1242,6 +1242,7 @@ app.get('/api/opportunities', async (req, res) => {
     // Status filter: open (default), pending (closed but not awarded), all
     const status = req.query.status || 'open'
     const conditions = []
+    conditions.push("(i.hidden IS NOT TRUE)")  // Always filter hidden/unsalvageable records
     if (status === 'open') {
       conditions.push("(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)")
     } else if (status === 'pending') {
@@ -1296,8 +1297,8 @@ app.get('/api/opportunities', async (req, res) => {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    // Get total count
-    const countResult = await pool.query(`SELECT COUNT(*) FROM opportunities o ${whereClause}`, params)
+    // Get total count (must join intel to respect hidden flag)
+    const countResult = await pool.query(`SELECT COUNT(*) FROM opportunities o LEFT JOIN opportunity_intel i USING (notice_id) ${whereClause}`, params)
     const total = parseInt(countResult.rows[0].count)
 
     // Get paginated data
