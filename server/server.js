@@ -1410,17 +1410,17 @@ app.get('/api/proxy/attachment', async (req, res) => {
 })
 
 // ─── Record reports (user-submitted corrections) ──────────
-app.post('/api/opportunities/:notice_id/report', async (req, res) => {
+app.post('/api/opportunities/:notice_id/report', authMiddleware, async (req, res) => {
   try {
     const { notice_id } = req.params
-    const { report_type, details, suggested_value, reporter_email } = req.body
+    const { report_type, details, suggested_value } = req.body
     if (!report_type) return res.status(400).json({ error: 'report_type required' })
     const validTypes = ['wrong_location', 'wrong_title', 'bad_summary', 'wrong_agency', 'other']
     if (!validTypes.includes(report_type)) return res.status(400).json({ error: 'invalid report_type' })
     await pool.query(
-      `INSERT INTO record_reports (notice_id, report_type, details, suggested_value, reporter_email)
+      `INSERT INTO record_reports (notice_id, report_type, details, suggested_value, member_id)
        VALUES ($1, $2, $3, $4, $5)`,
-      [notice_id, report_type, details || null, suggested_value || null, reporter_email || null]
+      [notice_id, report_type, details || null, suggested_value || null, req.user.id]
     )
     res.json({ ok: true })
   } catch (e) {
@@ -1432,9 +1432,10 @@ app.post('/api/opportunities/:notice_id/report', async (req, res) => {
 app.get('/api/admin/reports', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT r.*, o.title, o.agency_name
+      SELECT r.*, o.title, o.agency_name, m.email AS member_email
       FROM record_reports r
       LEFT JOIN opportunities o USING (notice_id)
+      LEFT JOIN members m ON m.id = r.member_id
       WHERE r.status = 'pending'
       ORDER BY r.created_at DESC
       LIMIT 50

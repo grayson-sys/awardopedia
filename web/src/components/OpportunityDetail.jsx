@@ -1111,7 +1111,7 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               </button>
             </div>
 
-            <ReportIssueButton noticeId={opp.notice_id} />
+            <ReportIssueButton noticeId={opp.notice_id} user={user} token={token} onSignIn={onSignIn} />
             <FeedbackForm noticeId={opp.notice_id} />
           </div>
         </div>
@@ -1136,26 +1136,27 @@ const SUGGESTION_PLACEHOLDERS = {
   other:          'Suggested correction',
 }
 
-function ReportIssueButton({ noticeId }) {
+function ReportIssueButton({ noticeId, user, token, onSignIn }) {
   const [open, setOpen] = useState(false)
   const [reportType, setReportType] = useState('')
   const [suggestedValue, setSuggestedValue] = useState('')
   const [details, setDetails] = useState('')
-  const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!reportType) return
+    if (!reportType || !user) return
     try {
       await fetch(`/api/opportunities/${noticeId}/report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
           report_type: reportType,
           suggested_value: suggestedValue || null,
           details: details || null,
-          reporter_email: email || null,
         }),
       })
       setSubmitted(true)
@@ -1176,11 +1177,11 @@ function ReportIssueButton({ noticeId }) {
     <div className="card mt-16" style={{ padding: '12px 16px' }}>
       {!open ? (
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => user ? setOpen(true) : onSignIn && onSignIn()}
           style={{ background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 12, color: 'var(--color-muted)', padding: 0 }}
         >
-          🚩 Suggest a correction
+          🚩 {user ? 'Suggest a correction' : 'Sign in to suggest a correction'}
         </button>
       ) : (
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1218,13 +1219,6 @@ function ReportIssueButton({ noticeId }) {
             style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
               resize: 'vertical', outline: 'none' }}
-          />
-
-          <input
-            type="email" value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="Email (optional — if you want us to follow up)"
-            style={{ padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
-              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', outline: 'none' }}
           />
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
