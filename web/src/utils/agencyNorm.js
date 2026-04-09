@@ -59,46 +59,43 @@ function uninvert(raw) {
   const m = raw.match(/^(.+?),?\s+DEPARTMENT\s+OF\s*$/i)
   if (m) return `Department of ${toTitleCase(m[1].trim())}`
 
+  // Trailing ", THE" or ", BBG" etc.
+  const mTrail = raw.match(/^(.+?),\s*(the|bbg)\s*$/i)
+  if (mTrail) {
+    const fixed = `${mTrail[2].trim()} ${mTrail[1].trim()}`
+    return toTitleCase(fixed)
+  }
+
   // All-caps fallback → title case
   if (raw === raw.toUpperCase()) return toTitleCase(raw)
 
   return raw
 }
 
-// ── Step 2: Abbreviation map ──────────────────────────────────────────────────
-// Keys are the uninverted (normal-format) name.
+// ── Step 2: Flip "Department of X" → "X Department" ─────────────────────────
+// The operative word should come first for readability.
+
+function flipDepartment(name) {
+  if (!name) return name
+
+  // "Department of the X" → "X Department"
+  const mThe = name.match(/^Department of the (.+)$/i)
+  if (mThe) return `${mThe[1]} Department`
+
+  // "Department of X" → "X Department"
+  const m = name.match(/^Department of (.+)$/i)
+  if (m) return `${m[1]} Department`
+
+  return name
+}
+
+// ── Step 3: Abbreviation map ──────────────────────────────────────────────────
+// Keys are the uninverted (normal-format) name BEFORE flipping.
 // Values are what the user sees.
 
 const ABBREV = {
-  // Cabinet departments
-  'Department of Agriculture':                  'USDA',
-  'Department of Commerce':                     'Dept. of Commerce',
-  'Department of Defense':                      'Defense Department',
-  'Department of Education':                    'Dept. of Education',
-  'Department of Energy':                       'Dept. of Energy',
-  'Department of Health and Human Services':    'HHS',
-  'Department of Homeland Security':            'DHS',
-  'Department of Housing and Urban Development':'HUD',
-  'Department of Justice':                      'Dept. of Justice',
-  'Department of Labor':                        'Dept. of Labor',
-  'Department of State':                        'Dept. of State',
-  'Department of the Interior':                 'Dept. of the Interior',
-  'Department of the Treasury':                 'Dept. of the Treasury',
-  'Department of Transportation':               'Dept. of Transportation',
-  'Department of Veterans Affairs':             'Veterans Affairs',
-
-  // Independent agencies
-  'Agency for International Development':       'USAID',
-  'Environmental Protection Agency':            'EPA',
-  'Federal Communications Commission':          'FCC',
-  'General Services Administration':            'GSA',
+  // Only NASA stays abbreviated — all others get flipped by flipDepartment
   'National Aeronautics and Space Administration': 'NASA',
-  'National Science Foundation':                'NSF',
-  'Nuclear Regulatory Commission':              'NRC',
-  'Office of Personnel Management':             'OPM',
-  'Small Business Administration':              'SBA',
-  'Social Security Administration':             'SSA',
-  'US Army Corps of Engineers':                 'Army Corps of Engineers',
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -110,7 +107,7 @@ const ABBREV = {
 export function normalizeAgency(raw) {
   if (!raw) return '—'
   const normal = uninvert(raw)
-  return ABBREV[normal] || normal
+  return ABBREV[normal] || flipDepartment(normal)
 }
 
 /**
@@ -125,7 +122,13 @@ export function normalizeAgency(raw) {
 export function parseAgencyHierarchy(raw) {
   if (!raw) return { agency: '—', office: null }
 
-  const parts = raw.split('.').map(p => p.trim()).filter(Boolean)
+  // Handle both separator formats: "A.B.C" or "A > B > C"
+  const parts = raw.split(/[.>]/).map(p => p.trim()).filter(Boolean)
+
+  // Fix truncation issues like "OF Defense" → "Department of Defense"
+  if (parts[0] && /^OF\s+/i.test(parts[0])) {
+    parts[0] = 'Department ' + parts[0]
+  }
 
   if (parts.length === 1) {
     // Single segment (USASpending format)
@@ -155,7 +158,7 @@ export function parseAgencyHierarchy(raw) {
       agency = topAbbrev
     }
   } else {
-    agency = topNorm
+    agency = flipDepartment(topNorm)
   }
 
   // Office = last meaningful segment. Clean up parenthetical codes like "PCAC (36C776)"
@@ -184,9 +187,15 @@ export function parseAgencyHierarchy(raw) {
 /**
  * Quick one-liner for summary table rows — just the top-level abbreviation.
  * Does not include bureau or office.
+ * Handles both dot (.) and angle bracket (>) separators.
  */
 export function topAgencyLabel(raw) {
   if (!raw) return '—'
-  const top = raw.split('.')[0].trim()
+  // Handle both separator formats: "A.B.C" or "A > B > C"
+  let top = raw.split(/[.>]/)[0].trim()
+  // Fix truncation issues like "OF Defense" → "Dept. of Defense"
+  if (/^OF\s+/i.test(top)) {
+    top = 'Department ' + top
+  }
   return normalizeAgency(top)
 }
