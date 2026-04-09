@@ -824,6 +824,8 @@ No markdown, no explanation — just the JSON object."""
 AI_EXTRACTABLE_FIELDS = {
     'size_standard':       'The SBA size standard (e.g. "$22 million" or "1,250 employees")',
     'performance_address': 'The street address where work will be performed',
+    'performance_city':    'The city or town where the work will physically be performed — look at the SOW, PWS, project location, or place of performance section. NOT the contracting office city. If the location is a military base, national park, or facility, use the nearest city.',
+    'performance_state':   'The 2-letter state abbreviation where the work will physically be performed — from the SOW/PWS, NOT the contracting office address.',
     'contract_structure':  'Base year + option years structure (e.g. "1 base + 4 option years")',
     'wage_floor':          'Prevailing wage rate for the primary occupation (e.g. "$18.27/hr for Janitor")',
     'award_basis':         'Evaluation method: "LPTA", "Best Value", or "Lowest Price"',
@@ -1998,6 +2000,25 @@ def flush_to_db(rec: dict, dry_run: bool = False):
         title = rec.get('fields', {}).get('title') or ''
         slug = _generate_slug(title, notice_id)
         updates['slug'] = slug
+
+    # Override place of performance with AI-extracted location from PDFs
+    # SAM.gov often reports the contracting office, not where the work happens
+    ai_city = ai_ext.get('performance_city')
+    ai_state = ai_ext.get('performance_state')
+    if ai_state and len(ai_state) == 2:
+        old_state = rec.get('fields', {}).get('place_of_performance_state', '')
+        updates['place_of_performance_state'] = ai_state.upper()
+        if ai_state.upper() != old_state:
+            log(0, notice_id, f"Place of performance: {old_state} → {ai_state.upper()} (from PDF)")
+        if ai_city and len(ai_city) > 1:
+            # Title-case the city if it's ALL CAPS
+            if ai_city == ai_city.upper() and len(ai_city) > 2:
+                ai_city = ai_city.title()
+            updates['place_of_performance_city'] = ai_city
+        elif ai_state.upper() != old_state:
+            # State changed but no city found — clear stale city from old state
+            updates['place_of_performance_city'] = None
+            log(0, notice_id, "Cleared stale city (state changed, no city in PDF)")
 
     if updates:
         set_clause = ', '.join(f"{k} = %s" for k in updates)
