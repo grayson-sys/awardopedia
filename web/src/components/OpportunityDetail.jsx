@@ -718,6 +718,16 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               <ArrowLeft size={14} /> Back to opportunities
             </button>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  const el = document.getElementById('edit-form')
+                  if (el) el.scrollIntoView({ behavior: 'smooth' })
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+              >
+                ✏️ Edit this record
+              </button>
               <ShareButton opp={opp} />
               <button
                 className={`btn ${isSaved ? 'btn-amber' : 'btn-ghost'}`}
@@ -1178,19 +1188,19 @@ function SuggestEditForm({ opp, user, token, onSignIn }) {
   }
 
   return (
-    <div className="card mt-16" style={{ padding: '14px 16px' }}>
+    <div id="edit-form" className="card mt-16" style={{ padding: '14px 16px' }}>
       {!open ? (
         <button
           onClick={() => user ? setOpen(true) : onSignIn && onSignIn()}
           style={{ background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 12, color: 'var(--color-muted)', padding: 0 }}
+            fontSize: 13, color: 'var(--color-navy)', fontWeight: 600, padding: 0 }}
         >
-          ✏️ {user ? 'Suggest an edit to this record' : 'Sign in to suggest an edit'}
+          ✏️ {user ? 'Edit this record' : 'Sign in to edit this record'}
         </button>
       ) : (
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Suggest an edit</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Edit this record</span>
             <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
               Change any field below — only your edits will be submitted
             </span>

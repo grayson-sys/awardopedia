@@ -105,6 +105,62 @@ def log(stage: int, notice_id: str, msg: str):
     print(f"  {tag} {nid} — {msg}")
 
 
+def _fetch_psc_description(code: str) -> Optional[str]:
+    """Look up a PSC code description from USASpending API. Returns description or None."""
+    # PSC prefix patterns (official categories)
+    PSC_PREFIXES = {
+        'Z1': 'Maintenance/Repair/Alteration of',
+        'Z2': 'Repair/Alteration of',
+        'Y1': 'Construction of',
+        'N':  'Installation of Equipment —',
+        'J':  'Maintenance/Repair of Equipment —',
+        'H':  'Quality Control/Testing —',
+        'R':  'Professional/Administrative Services —',
+        'D':  'IT and Telecom Services —',
+        'S':  'Utilities and Housekeeping —',
+        'V':  'Transportation/Travel —',
+    }
+    # PSC suffix patterns for Z-series (facility types)
+    Z_SUFFIXES = {
+        'AA': 'Office Buildings', 'AZ': 'Administrative Facilities',
+        'DA': 'Hospitals', 'DB': 'Laboratories/Clinics',
+        'FA': 'Ammunition Facilities', 'GA': 'Airport/Runway',
+        'JZ': 'Miscellaneous Buildings', 'KB': 'Dams',
+        'KF': 'Dredging Facilities', 'LA': 'Harbors/Ports',
+        'LB': 'Highways/Roads/Bridges', 'LC': 'Tunnels/Subsurface',
+        'LZ': 'Parks/Monuments/Recreation Facilities',
+        'NA': 'Fuel Supply Facilities', 'NB': 'Heating/Cooling Plants',
+    }
+
+    # Try to construct from known patterns
+    prefix_2 = code[:2]
+    prefix_1 = code[:1]
+    suffix = code[2:] if len(code) >= 4 else ''
+
+    if prefix_2 in PSC_PREFIXES and suffix in Z_SUFFIXES:
+        return f"{PSC_PREFIXES[prefix_2]} {Z_SUFFIXES[suffix]}"
+
+    # Try USASpending API
+    try:
+        url = f"https://api.usaspending.gov/api/v2/references/filter_tree/psc/{code}/"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Awardopedia/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+        results = data.get('results', [])
+        if results:
+            return results[0].get('description', '')
+    except Exception:
+        pass
+
+    # Last resort: construct from prefix only
+    if prefix_2 in PSC_PREFIXES:
+        return PSC_PREFIXES[prefix_2] + ' Facilities'
+    if prefix_1 in PSC_PREFIXES:
+        return PSC_PREFIXES[prefix_1] + ' Equipment'
+
+    return None
+
+
 def _generate_slug(title: str, notice_id: str) -> str:
     """Generate SEO slug: slugified-title-shortid."""
     import unicodedata
@@ -1341,6 +1397,16 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
             [psc]
         )
         row = cur.fetchone()
+        if not row and not dry_run:
+            # Code not in table — try to look it up and cache it
+            desc = _fetch_psc_description(psc)
+            if desc:
+                cur.execute(
+                    "INSERT INTO psc_codes (code, description) VALUES (%s, %s) ON CONFLICT (code) DO NOTHING",
+                    [psc, desc]
+                )
+                row = (psc, desc)
+                log(7, notice_id, f"PSC: {psc} — {desc} (fetched & cached)")
         if row:
             enrichment['psc_code'] = row[0]
             enrichment['psc_description'] = row[1]
