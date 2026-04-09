@@ -584,7 +584,7 @@ def generate_page_for_piid(piid: str) -> bool:
         fpath = CONTRACTS_DIR / f"{piid}.html"
         fpath.write_text(html, encoding='utf-8')
 
-        s3 = make_s3_client()
+        s3 = get_s3_client()
         remote_key = f"contracts/{piid}.html"
         bucket = os.environ.get('DO_SPACES_BUCKET', 'awardopedia-static')
         region = os.environ.get('DO_SPACES_REGION', 'nyc3')
@@ -626,7 +626,7 @@ def generate_page_for_opportunity(notice_id: str) -> bool:
         fpath = OPPORTUNITIES_DIR / f"{notice_id}.html"
         fpath.write_text(html, encoding='utf-8')
 
-        s3 = make_s3_client()
+        s3 = get_s3_client()
         remote_key = f"opportunities/{notice_id}.html"
         bucket = os.environ.get('DO_SPACES_BUCKET', 'awardopedia-static')
         region = os.environ.get('DO_SPACES_REGION', 'nyc3')

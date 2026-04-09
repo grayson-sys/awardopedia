@@ -65,7 +65,9 @@ from fetch_opportunity import parse_opportunity, upsert_opportunity
 DATABASE_URL     = os.environ.get('DATABASE_URL', '')
 SAM_API_KEY      = os.environ.get('SAM_API_KEY', '')
 CLAUDE_PROXY_URL = os.environ.get('CLAUDE_PROXY_URL', 'http://localhost:3456')
-CLAUDE_MODEL     = 'claude-haiku-4'  # Haiku for speed/cost; Sonnet for quality
+CLAUDE_MODEL_SONNET = 'claude-sonnet-4'  # Sonnet for solicitations (records with deadlines)
+CLAUDE_MODEL_HAIKU  = 'claude-haiku-4'   # Haiku for award notices (no deadline, lower stakes)
+CLAUDE_MODEL        = CLAUDE_MODEL_SONNET  # Default; overridden per-record in Stage 6
 
 BASE_DIR    = Path(__file__).parent.parent
 DATA_DIR    = BASE_DIR / 'data'
@@ -1002,29 +1004,12 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
     fields = rec.get('fields', {})
     combined_text = rec.get('combined_text', '')
 
-    # ── Award Notice: deterministic summary, no AI call ───────────────────
-    if fields.get('notice_type') == 'Award Notice':
-        log(6, notice_id, "Award Notice — deterministic summary (skipping AI)")
-        result = _award_notice_summary(fields)
-        rec['ai_summary'] = result
-        # Clear extracted fields so garbled addresses don't bleed into the stored text
-        rec['det_extract'] = {}
-        rec['ai_extract'] = {}
-        # Write clean title back to DB if the original was garbled
-        clean_title = result.get('clean_title')
-        if clean_title and clean_title != fields.get('title') and not dry_run:
-            try:
-                conn = db_connect()
-                conn.autocommit = True
-                conn.cursor().execute(
-                    "UPDATE opportunities SET title = %s WHERE notice_id = %s",
-                    [clean_title, notice_id]
-                )
-                conn.close()
-                log(6, notice_id, f"Title fixed: {fields.get('title','')[:40]} → {clean_title[:40]}")
-            except Exception as e:
-                log(6, notice_id, f"Title update failed: {e}")
-        return rec
+    # ── Select model based on notice type ──────────────────────────────────
+    global CLAUDE_MODEL
+    is_award = fields.get('notice_type') == 'Award Notice'
+    CLAUDE_MODEL = CLAUDE_MODEL_HAIKU if is_award else CLAUDE_MODEL_SONNET
+    rec['summary_model'] = 'haiku' if is_award else 'sonnet'
+    log(6, notice_id, f"Using {'Haiku' if is_award else 'Sonnet'} ({fields.get('notice_type', 'unknown')})")
 
     if dry_run:
         log(6, notice_id, "[DRY] Would generate AI summary")
@@ -1133,32 +1118,8 @@ def stage_6_ai_summary(rec: dict, dry_run: bool = False) -> dict:
 # Python port of agencyNorm.js
 
 AGENCY_ABBREV = {
-    'Department of Agriculture':                   'USDA',
-    'Department of Commerce':                      'Dept. of Commerce',
-    'Department of Defense':                       'Defense Department',
-    'Department of Education':                     'Dept. of Education',
-    'Department of Energy':                        'Dept. of Energy',
-    'Department of Health and Human Services':     'HHS',
-    'Department of Homeland Security':             'DHS',
-    'Department of Housing and Urban Development': 'HUD',
-    'Department of Justice':                       'Dept. of Justice',
-    'Department of Labor':                         'Dept. of Labor',
-    'Department of State':                         'Dept. of State',
-    'Department of the Interior':                  'Dept. of the Interior',
-    'Department of the Treasury':                  'Dept. of the Treasury',
-    'Department of Transportation':                'Dept. of Transportation',
-    'Department of Veterans Affairs':              'Veterans Affairs',
-    'Agency for International Development':        'USAID',
-    'Environmental Protection Agency':             'EPA',
-    'Federal Communications Commission':           'FCC',
-    'General Services Administration':             'GSA',
+    # Only NASA stays abbreviated — all others are spelled out
     'National Aeronautics and Space Administration': 'NASA',
-    'National Science Foundation':                 'NSF',
-    'Nuclear Regulatory Commission':               'NRC',
-    'Office of Personnel Management':              'OPM',
-    'Small Business Administration':               'SBA',
-    'Social Security Administration':              'SSA',
-    'US Army Corps of Engineers':                  'Army Corps of Engineers',
 }
 
 LOWER_WORDS = {'of', 'the', 'and', 'for', 'in', 'at', 'by', 'to'}
@@ -1175,10 +1136,37 @@ def _to_title_case(s: str) -> str:
 def _normalize_agency_segment(seg: str) -> str:
     """
     Normalize a SAM.gov agency segment for tree lookup.
-    Handles abbreviations like 'DEPT OF' → 'department of'.
+    Handles inverted names ('X, DEPARTMENT OF' → 'department of x'),
+    abbreviations ('DEPT OF' → 'department of'), and common acronyms.
     Returns lowercase for comparison with name_normalized.
     """
-    s = seg.lower().strip()
+    s = seg.strip()
+
+    # Uninvert: "X, DEPARTMENT OF THE" → "DEPARTMENT OF THE X"
+    m = re.match(r'^(.+?),?\s+DEPARTMENT\s+OF\s+THE\s*$', s, re.IGNORECASE)
+    if m:
+        s = f"department of the {m.group(1).strip()}"
+    else:
+        m = re.match(r'^(.+?),?\s+DEPARTMENT\s+OF\s*$', s, re.IGNORECASE)
+        if m:
+            s = f"department of {m.group(1).strip()}"
+
+    # Handle trailing ", THE" / ", BBG" etc. (non-department inversions)
+    m = re.match(r'^(.+?),\s*(the|bbg)\s*$', s, re.IGNORECASE)
+    if m:
+        s = f"{m.group(2).strip()} {m.group(1).strip()}"
+
+    s = s.lower().strip()
+
+    # Special SAM.gov name mappings
+    SPECIAL = {
+        'the senate': 'united states senate',
+        'senate, the': 'united states senate',
+        'senate': 'united states senate',
+        'united states agency for global media, bbg': 'united states agency for global media',
+    }
+    if s in SPECIAL:
+        s = SPECIAL[s]
 
     # Common SAM.gov abbreviations → full names
     s = re.sub(r'^dept\s+of\s+the\s+', 'department of the ', s)
@@ -1358,31 +1346,54 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
         raw_hierarchy = row[0] if row and row[0] else ''
 
     agency_tree_id = None
-    if raw_hierarchy:
-        # Walk the tree to find deepest matching node
-        segments = [_normalize_agency_segment(s.strip()) for s in raw_hierarchy.split('.')]
 
-        # Start at level 1 (department)
+    def _walk_agency_tree(segments, cur):
+        """Walk the agency_tree matching normalized segments. Returns deepest tree ID or None."""
+        # Deduplicate: SAM.gov sometimes repeats the department as sub-agency
+        deduped = [segments[0]]
+        for seg in segments[1:]:
+            if seg != deduped[-1]:
+                deduped.append(seg)
+        segments = deduped
+
         cur.execute(
             "SELECT id FROM agency_tree WHERE level = 1 AND name_normalized = %s",
             [segments[0]]
         )
         row = cur.fetchone()
+        if not row:
+            return None
 
-        if row:
-            agency_tree_id = row[0]
+        tree_id = row[0]
+        for seg in segments[1:]:
+            cur.execute(
+                "SELECT id FROM agency_tree WHERE parent_id = %s AND name_normalized = %s",
+                [tree_id, seg]
+            )
+            child = cur.fetchone()
+            if child:
+                tree_id = child[0]
+            else:
+                break
+        return tree_id
 
-            # Walk down tree matching each segment
-            for seg in segments[1:]:
-                cur.execute(
-                    "SELECT id FROM agency_tree WHERE parent_id = %s AND name_normalized = %s",
-                    [agency_tree_id, seg]
-                )
-                child = cur.fetchone()
-                if child:
-                    agency_tree_id = child[0]
-                else:
-                    break  # Stop at deepest match
+    # Primary: walk raw_agency_hierarchy (dot-separated from SAM.gov)
+    if raw_hierarchy:
+        segments = [_normalize_agency_segment(s.strip()) for s in raw_hierarchy.split('.')]
+        agency_tree_id = _walk_agency_tree(segments, cur)
+
+    # Fallback: match from agency_name when no raw hierarchy exists
+    if not agency_tree_id:
+        cur.execute("SELECT agency_name FROM opportunities WHERE notice_id = %s", [notice_id])
+        row = cur.fetchone()
+        agency_name_raw = row[0] if row and row[0] else ''
+        if agency_name_raw:
+            # agency_name may contain " > " chain from prior pipeline run, or raw SAM format
+            if ' > ' in agency_name_raw:
+                segments = [_normalize_agency_segment(s.strip()) for s in agency_name_raw.split(' > ')]
+            else:
+                segments = [_normalize_agency_segment(agency_name_raw.strip())]
+            agency_tree_id = _walk_agency_tree(segments, cur)
 
     if agency_tree_id:
         enrichment['agency_tree_id'] = agency_tree_id
@@ -1399,19 +1410,20 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
         ''', [agency_tree_id])
         ancestors = cur.fetchall()
 
+        chain_parts = []
         for name, level in ancestors:
-            if level == 1:
-                enrichment['agency_name'] = name
-            elif level == 2:
+            chain_parts.append(name)
+            if level == 2:
                 enrichment['sub_agency_name'] = name
+        enrichment['agency_name'] = ' > '.join(chain_parts)
 
-        log(7, notice_id, f"Agency tree: {raw_hierarchy[:40]}... → ID {agency_tree_id}")
+        source = 'hierarchy' if raw_hierarchy else 'agency_name'
+        log(7, notice_id, f"Agency tree ({source}): → ID {agency_tree_id}")
     else:
         # No tree match — use deterministic cleanup as fallback
         raw_agency = fields.get('agency_name', '')
         enrichment['agency_display'] = normalize_agency(raw_agency)
-        if raw_hierarchy:
-            log(7, notice_id, f"Agency: NO TREE MATCH for {raw_hierarchy[:50]}...")
+        log(7, notice_id, f"Agency: NO TREE MATCH for {raw_agency[:50]}...")
 
     conn.close()
 
@@ -1882,6 +1894,8 @@ def flush_to_db(rec: dict, dry_run: bool = False):
     updates = {}
     if summary_text:
         updates['llama_summary'] = summary_text
+    if rec.get('summary_model'):
+        updates['summary_model'] = rec['summary_model']
     if link.get('alive') is not None:
         updates['sam_url_alive'] = link['alive']
         updates['sam_url_checked'] = datetime.now(timezone.utc).isoformat()
@@ -2024,8 +2038,204 @@ STAGE_FUNCTIONS = {
     7:  stage_7_enrichment,
     8:  stage_8_congressional,
     9:  stage_9_link_check,
-    # 10: stage_10_static_page,  # DISABLED — enable after all records are cleaned
+    10: stage_10_static_page,
+    # 11, 12: handled separately in run_pipeline (batch operations, not per-record)
 }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 11 — AWARD MATCHING
+# ══════════════════════════════════════════════════════════════════════════════
+
+def stage_11_award_match(dry_run: bool = False):
+    """
+    Match Award Notices to their original solicitations by solicitation_number.
+    For each match: copy award data to the solicitation, hide the Award Notice.
+    Batch operation — runs once after all per-record stages complete.
+    """
+    conn = db_connect()
+    conn.autocommit = True
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Find unmatched Award Notices
+    cur.execute("""
+        SELECT a.notice_id, a.solicitation_number, a.raw_sam_json,
+               a.estimated_value_max, a.title
+        FROM opportunities a
+        LEFT JOIN opportunity_intel ai ON ai.notice_id = a.notice_id
+        WHERE a.notice_type = 'Award Notice'
+          AND a.solicitation_number IS NOT NULL
+          AND a.solicitation_number != ''
+          AND NOT EXISTS (
+              SELECT 1 FROM opportunity_intel i2
+              WHERE i2.award_notice_id = a.notice_id
+          )
+    """)
+    award_notices = cur.fetchall()
+
+    print(f"\n  Stage 11: {len(award_notices)} Award Notices to match")
+    matched, hidden_only = 0, 0
+
+    for an in award_notices:
+        sol_num = an['solicitation_number']
+        notice_id = an['notice_id']
+
+        # Find the original solicitation
+        cur.execute("""
+            SELECT notice_id FROM opportunities
+            WHERE solicitation_number = %s
+              AND notice_type != 'Award Notice'
+              AND notice_id != %s
+            ORDER BY created_at ASC
+            LIMIT 1
+        """, [sol_num, notice_id])
+        match = cur.fetchone()
+
+        if not match:
+            continue
+
+        # Extract award data from raw_sam_json
+        raw = an.get('raw_sam_json') or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                raw = {}
+        award_block = raw.get('award', {}) or {}
+        awardee = award_block.get('awardee', {}) or {}
+
+        award_data = {
+            'award_number': award_block.get('number'),
+            'award_amount': award_block.get('amount') or an.get('estimated_value_max'),
+            'award_date':   award_block.get('date'),
+            'winner_name':  awardee.get('name'),
+            'winner_uei':   awardee.get('ueiSAM'),
+        }
+
+        if dry_run:
+            winner = award_data.get('winner_name') or '?'
+            log(11, notice_id, f"[DRY] Would match → {match['notice_id'][:16]}... | {winner}")
+            matched += 1
+            continue
+
+        # 1. Write award data to the solicitation
+        updates = {k: v for k, v in award_data.items() if v is not None}
+        if updates:
+            set_clause = ', '.join(f"{k} = %s" for k in updates)
+            cur.execute(
+                f"UPDATE opportunities SET {set_clause} WHERE notice_id = %s",
+                list(updates.values()) + [match['notice_id']]
+            )
+
+        # 2. Record the match on the solicitation's intel row
+        cur.execute("""
+            INSERT INTO opportunity_intel (notice_id, award_notice_id, award_matched_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (notice_id) DO UPDATE SET
+                award_notice_id = EXCLUDED.award_notice_id,
+                award_matched_at = NOW()
+        """, [match['notice_id'], notice_id])
+
+        # 3. Hide the Award Notice
+        cur.execute("""
+            INSERT INTO opportunity_intel (notice_id, hidden)
+            VALUES (%s, TRUE)
+            ON CONFLICT (notice_id) DO UPDATE SET hidden = TRUE
+        """, [notice_id])
+
+        winner = award_data.get('winner_name') or '?'
+        amt = award_data.get('award_amount')
+        amt_str = f"${float(amt):,.0f}" if amt else '?'
+        log(11, notice_id, f"Matched → {match['notice_id'][:16]}... | {winner} | {amt_str}")
+        matched += 1
+
+    # Hide ALL remaining Award Notices (even unmatched ones)
+    if not dry_run:
+        cur.execute("""
+            INSERT INTO opportunity_intel (notice_id, hidden)
+            SELECT o.notice_id FROM opportunities o
+            LEFT JOIN opportunity_intel i USING (notice_id)
+            WHERE o.notice_type = 'Award Notice'
+              AND (i.hidden IS NOT TRUE OR i.notice_id IS NULL)
+            ON CONFLICT (notice_id) DO UPDATE SET hidden = TRUE
+        """)
+        hidden_only = cur.rowcount
+
+    conn.close()
+    print(f"  Stage 11: {matched} matched, {hidden_only} additionally hidden")
+    log(11, '', f"Complete: {matched} matched, {hidden_only} hidden")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 12 — WINNER ENRICHMENT (Award winners → recipients table → YFinance)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def stage_12_winner_enrichment(dry_run: bool = False):
+    """
+    After Stage 11 matches award notices, take each winner_name/winner_uei
+    and enrich them in the recipients table:
+      1. Upsert winners into recipients
+      2. Run YFinance (public) or AI brief (private) via pipeline_contract.py
+
+    Batch operation — runs after Stage 11.
+    """
+    conn = db_connect()
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    # Find winners not yet in recipients or not yet enriched
+    cur.execute("""
+        SELECT DISTINCT o.winner_name, o.winner_uei
+        FROM opportunities o
+        WHERE o.winner_uei IS NOT NULL
+          AND o.winner_uei != ''
+          AND NOT EXISTS (
+              SELECT 1 FROM recipients r
+              WHERE r.uei = o.winner_uei
+                AND r.yahoo_enriched_at IS NOT NULL
+          )
+    """)
+    winners = cur.fetchall()
+    print(f"\n  Stage 12: {len(winners)} award winners to enrich")
+
+    if not winners:
+        log(12, '', "No unenriched winners found")
+        conn.close()
+        return
+
+    if dry_run:
+        for name, uei in winners[:10]:
+            log(12, uei or '???', f"[DRY] Would enrich: {name}")
+        conn.close()
+        return
+
+    # Step 1: Upsert winners into recipients table
+    upserted = 0
+    for name, uei in winners:
+        cur.execute("""
+            INSERT INTO recipients (uei, legal_name, created_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (uei) DO UPDATE SET
+                legal_name = COALESCE(EXCLUDED.legal_name, recipients.legal_name),
+                updated_at = NOW()
+        """, [uei, name])
+        upserted += 1
+
+    log(12, '', f"Upserted {upserted} winners into recipients")
+    conn.close()
+
+    # Step 2: Run financial enrichment (YFinance for public, AI brief for private)
+    try:
+        from pipeline_contract import stage5_financials
+        enriched = stage5_financials(limit=len(winners), dry_run=dry_run)
+        log(12, '', f"Enriched {enriched} companies (YFinance + AI briefs)")
+    except ImportError:
+        log(12, '', "WARNING: pipeline_contract.py not available — skipping financial enrichment")
+    except Exception as e:
+        log(12, '', f"Financial enrichment error: {e}")
+
+    print(f"  Stage 12: {upserted} upserted, enrichment complete")
+    log(12, '', f"Complete: {upserted} winners processed")
 
 
 def parse_stage_range(stage_str: str) -> set:
@@ -2220,7 +2430,7 @@ def run_pipeline(args):
     elif args.skip_ai:
         active_stages = {1, 2, 3, 4, 7, 8, 9, 10}
     else:
-        active_stages = set(range(1, 11))
+        active_stages = set(range(1, 13))
 
     print(f"\n{'='*60}")
     print(f"AWARDOPEDIA OPPORTUNITY PIPELINE")
@@ -2230,6 +2440,14 @@ def run_pipeline(args):
     print(f"Mode:     {'DRY RUN' if args.dry_run else 'LIVE'}")
     print(f"Limit:    {args.limit or 'all'}")
     print(f"{'='*60}\n")
+
+    # ── Batch-only stages: no per-record loading needed ──
+    if active_stages <= {11, 12}:
+        if 11 in active_stages:
+            stage_11_award_match(dry_run=args.dry_run)
+        if 12 in active_stages:
+            stage_12_winner_enrichment(dry_run=args.dry_run)
+        return
 
     # ── Stage 1: Ingest ────────────────────────────────────────────────
     if 1 in active_stages:
@@ -2293,6 +2511,14 @@ def run_pipeline(args):
         if not args.dry_run and i < len(pipeline_records):
             time.sleep(0.5)
 
+    # ── Stage 11: Award matching (batch, after all records) ─────────
+    if 11 in active_stages:
+        stage_11_award_match(dry_run=args.dry_run)
+
+    # ── Stage 12: Winner enrichment (batch, after award matching) ──
+    if 12 in active_stages:
+        stage_12_winner_enrichment(dry_run=args.dry_run)
+
     # ── Summary ────────────────────────────────────────────────────────
     elapsed = (datetime.now() - start).seconds
     api_cost = (total_tokens['prompt'] / 1_000_000 * 3.0) + \
@@ -2323,8 +2549,13 @@ def _load_existing_records(args) -> list:
         limit_clause = f"LIMIT {args.limit}" if args.limit else ""
         cur.execute(f"""
             SELECT * FROM opportunities
-            WHERE response_deadline >= CURRENT_DATE OR response_deadline IS NULL
-            ORDER BY response_deadline ASC NULLS LAST
+            WHERE (response_deadline >= CURRENT_DATE OR response_deadline IS NULL)
+               OR llama_summary IS NULL
+               OR agency_tree_id IS NULL
+            ORDER BY
+                CASE WHEN llama_summary IS NULL THEN 0 ELSE 1 END,
+                CASE WHEN agency_tree_id IS NULL THEN 0 ELSE 1 END,
+                response_deadline ASC NULLS LAST
             {limit_clause}
         """)
 

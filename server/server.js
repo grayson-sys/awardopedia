@@ -1243,15 +1243,19 @@ app.get('/api/opportunities', async (req, res) => {
     const status = req.query.status || 'open'
     const conditions = []
     conditions.push("(i.hidden IS NOT TRUE)")  // Always filter hidden/unsalvageable records
+
+    // Only show biddable notice types in open/pending views
+    const BIDDABLE_TYPES = "('Combined Synopsis/Solicitation', 'Solicitation', 'Presolicitation', 'Sale of Surplus Property')"
     if (status === 'open') {
       conditions.push("(response_deadline >= CURRENT_DATE OR response_deadline IS NULL)")
+      conditions.push(`(notice_type IS NULL OR notice_type IN ${BIDDABLE_TYPES})`)
     } else if (status === 'pending') {
-      // Closed (deadline passed) within last 90 days, not an award notice
+      // Closed (deadline passed) within last 90 days, biddable types only
       conditions.push("response_deadline < CURRENT_DATE")
       conditions.push("response_deadline >= CURRENT_DATE - INTERVAL '90 days'")
-      conditions.push("(notice_type IS NULL OR notice_type != 'a')")
+      conditions.push(`(notice_type IS NULL OR notice_type IN ${BIDDABLE_TYPES})`)
     }
-    // status === 'all' has no date filter
+    // status === 'all' has no type filter — shows everything for research
     const params = []
     let paramIdx = 1
 
