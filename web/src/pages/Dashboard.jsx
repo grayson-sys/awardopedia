@@ -215,7 +215,7 @@ export default function Dashboard({ user, token, onBack, onSignIn }) {
                         <div style={{ background: '#E9A820', color: '#1B3A6B', padding: '8px 12px', borderRadius: 20, fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
                           {m.match_score}% match
                         </div>
-                        <a href={`/opportunity/${m.notice_id}`} className="btn btn-navy btn-sm">View</a>
+                        <a href={`/opportunity/${m.slug || m.notice_id}`} className="btn btn-navy btn-sm">View</a>
                       </div>
                     </div>
                   </div>

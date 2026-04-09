@@ -212,15 +212,19 @@ export default function App() {
       setViewState('results')
       window.history.replaceState({ view: 'results' }, '', path)
     } else if (path.startsWith('/opportunity/')) {
-      // Direct link to opportunity: /opportunity/{notice_id}
-      const noticeId = path.split('/opportunity/')[1]
-      if (noticeId) {
-        fetch(`/api/opportunities/${noticeId}`)
+      // Direct link to opportunity: /opportunity/{slug} or /opportunity/{notice_id}
+      const idOrSlug = path.split('/opportunity/')[1]
+      if (idOrSlug) {
+        fetch(`/api/opportunities/${idOrSlug}`)
           .then(r => r.ok ? r.json() : null)
           .then(opp => {
             if (opp) {
               setSelectedOpp(opp)
               setViewState('opp-detail')
+              // If we arrived via old notice_id URL and slug exists, update URL silently
+              if (opp.slug && idOrSlug !== opp.slug) {
+                window.history.replaceState({ view: 'opp-detail', id: opp.notice_id }, '', `/opportunity/${opp.slug}`)
+              }
             } else {
               setViewState('home')
             }
@@ -298,6 +302,7 @@ export default function App() {
   const [filterAgency, setFilterAgency] = useState('')
   const [filterDataSource, setFilterDataSource] = useState('')
   const [filterMinDate, setFilterMinDate] = useState('')
+  const [filterDeadline, setFilterDeadline] = useState('')
   const [searchTrigger, setSearchTrigger] = useState(0)  // Increment to force reload
   const [showFilters, setShowFilters] = useState(false)
   const PAGE_SIZE = 50
@@ -321,6 +326,7 @@ export default function App() {
     if (filterSetAside) params.set('set_aside', filterSetAside)
     if (filterDataSource) params.set('data_source', filterDataSource)
     if (filterMinDate) params.set('min_date', filterMinDate)
+    if (filterDeadline) params.set('deadline', filterDeadline)
     if (query) params.set('q', query)
     Object.entries(extra).forEach(([k, v]) => params.set(k, v))
     return params.toString()
@@ -376,7 +382,7 @@ export default function App() {
     if (view === 'results') {
       loadData(false)
     }
-  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, filterMinDate, searchTrigger])
+  }, [view, activeTab, filterState, filterAgency, filterNaics, filterSetAside, filterDataSource, filterMinDate, filterDeadline, searchTrigger])
 
   // Deep-link support (on mount only)
   useEffect(() => {
@@ -436,8 +442,8 @@ export default function App() {
   const filteredContracts = contracts
   const filteredOpportunities = opportunities
 
-  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource || filterMinDate
-  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource(''); setFilterMinDate('') }
+  const hasActiveFilters = filterState || filterSetAside || filterNaics || filterAgency || filterDataSource || filterMinDate || filterDeadline
+  const clearFilters = () => { setFilterState(''); setFilterSetAside(''); setFilterNaics(''); setFilterAgency(''); setFilterDataSource(''); setFilterMinDate(''); setFilterDeadline('') }
 
   // History management for back button
   useEffect(() => {
@@ -494,7 +500,7 @@ export default function App() {
   function openOpp(o) {
     setSelectedOpp(o)
     setViewState('opp-detail')
-    window.history.pushState({ view: 'opp-detail', id: o.notice_id }, '', `/opportunity/${o.notice_id}`)
+    window.history.pushState({ view: 'opp-detail', id: o.notice_id }, '', `/opportunity/${o.slug || o.notice_id}`)
   }
 
   function goHome() {
@@ -748,10 +754,25 @@ export default function App() {
                     </select>
                   </div>
                   <div className="filter-group">
+                    <label>Deadline</label>
+                    <select value={filterDeadline} onChange={e => setFilterDeadline(e.target.value)}>
+                      <option value="">All deadlines</option>
+                      <option value="14">2+ weeks</option>
+                      <option value="30">30+ days</option>
+                      <option value="90">90+ days</option>
+                      <option value="180">6+ months</option>
+                    </select>
+                  </div>
+                  <div className="filter-group">
                     <label>Set-Aside</label>
                     <select value={filterSetAside} onChange={e => setFilterSetAside(e.target.value)}>
                       <option value="">All set-asides</option>
-                      {setAsideOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                      <option value="full_open">Full & Open (any company)</option>
+                      <option value="small_business">Small Business</option>
+                      <option value="8a">8(a) Disadvantaged</option>
+                      <option value="sdvosb">Service-Disabled Veteran-Owned</option>
+                      <option value="hubzone">HUBZone</option>
+                      <option value="wosb">Women-Owned Small Business</option>
                     </select>
                   </div>
                   <div className="filter-group">

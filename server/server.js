@@ -1236,7 +1236,7 @@ app.get('/api/opportunities', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200)
     const offset = parseInt(req.query.offset) || 0
-    const { state, agency, naics, set_aside, q, data_source } = req.query
+    const { state, agency, naics, set_aside, q, data_source, deadline } = req.query
 
     // Build WHERE clauses
     // Status filter: open (default), pending (closed but not awarded), all
@@ -1275,8 +1275,31 @@ app.get('/api/opportunities', async (req, res) => {
       params.push(naics)
     }
     if (set_aside) {
-      conditions.push(`set_aside_type = $${paramIdx++}`)
-      params.push(set_aside)
+      // Group messy SAM.gov codes into human-readable categories
+      const setAsideGroups = {
+        'full_open':       ['NONE', '', '[""]'],
+        'small_business':  ['SBA', 'Small Business', 'SBP', '["SBA"]', 'ISBEE', 'IEE', 'BICIV'],
+        '8a':              ['8A', '8AN', '8(a) Sole Source'],
+        'sdvosb':          ['SDVOSB', 'SDVOSBC', 'SDVOSBS', 'VSA', 'VSB'],
+        'hubzone':         ['HUBZone', 'HZC', 'HZS'],
+        'wosb':            ['WOSB', 'EDWOSB', 'WOSBSS'],
+      }
+      const codes = setAsideGroups[set_aside]
+      if (codes) {
+        if (set_aside === 'full_open') {
+          const placeholders = codes.map(() => `$${paramIdx++}`).join(', ')
+          conditions.push(`(set_aside_type IS NULL OR set_aside_type IN (${placeholders}))`)
+          codes.forEach(c => params.push(c))
+        } else {
+          const placeholders = codes.map(() => `$${paramIdx++}`).join(', ')
+          conditions.push(`set_aside_type IN (${placeholders})`)
+          codes.forEach(c => params.push(c))
+        }
+      } else {
+        // Fallback: exact match for unknown codes
+        conditions.push(`set_aside_type = $${paramIdx++}`)
+        params.push(set_aside)
+      }
     }
     if (data_source) {
       if (data_source === 'federal') {
@@ -1284,6 +1307,13 @@ app.get('/api/opportunities', async (req, res) => {
       } else {
         conditions.push(`o.data_source = $${paramIdx++}`)
         params.push(data_source)
+      }
+    }
+    if (deadline) {
+      const days = parseInt(deadline)
+      if (days > 0) {
+        conditions.push(`response_deadline >= CURRENT_DATE + $${paramIdx++}::integer`)
+        params.push(days)
       }
     }
     if (q) {
@@ -1337,8 +1367,13 @@ app.get('/api/opportunities', async (req, res) => {
   }
 })
 
-app.get('/api/opportunities/:notice_id', async (req, res) => {
+app.get('/api/opportunities/:idOrSlug', async (req, res) => {
   try {
+    // Accept both notice_id (32-char hex) and SEO slug
+    const param = req.params.idOrSlug
+    const isNoticeId = /^[a-f0-9]{32}$/.test(param)
+    const whereClause = isNoticeId ? 'o.notice_id = $1' : 'o.slug = $1'
+
     const { rows } = await pool.query(`
       SELECT o.*,
         (o.response_deadline - CURRENT_DATE) AS days_to_deadline,
@@ -1355,14 +1390,22 @@ app.get('/api/opportunities/:notice_id', async (req, res) => {
         i.congressional_district,
         i.congress_member_url,
         i.has_controlled_docs,
+        i.key_requirements,
         p.description AS psc_description
       FROM opportunities o
       LEFT JOIN opportunity_intel i USING (notice_id)
       LEFT JOIN psc_codes p ON o.psc_code = p.code
-      WHERE o.notice_id = $1
-    `, [req.params.notice_id])
+      WHERE ${whereClause}
+    `, [param])
     if (!rows.length) return res.status(404).json({ error: 'Not found' })
-    res.json(rows[0])
+
+    // If accessed by old notice_id and slug exists, tell the client the canonical slug
+    const opp = rows[0]
+    if (isNoticeId && opp.slug) {
+      opp._canonical_slug = opp.slug
+    }
+
+    res.json(opp)
   } catch (e) {
     res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
   }

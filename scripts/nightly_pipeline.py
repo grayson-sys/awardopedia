@@ -86,6 +86,15 @@ def main():
 
     scripts_dir = BASE_DIR / 'scripts'
 
+    # ── Step 0: Delete expired static pages from DO Spaces ──────────────────
+    log("\n" + "=" * 60)
+    log("STEP 0: Clean up expired static pages")
+    log("=" * 60)
+    cleanup_ok = run_cmd(
+        ['python3', str(scripts_dir / 'cleanup_expired_pages.py')],
+        "Delete expired static pages from CDN"
+    )
+
     # ── Step 1: Fetch fresh from SAM.gov ─────────────────────────────────────
     log("\n" + "=" * 60)
     log("STEP 1: Fetch fresh opportunities from SAM.gov")
@@ -117,7 +126,7 @@ def main():
     # Cap at 200/night to avoid timeout — backfill_pipeline.py handles the bulk
     pipeline_cmd = [
         'python3', str(scripts_dir / 'pipeline_opportunity.py'),
-        '--stage', '1-10',  # Stages 1-10 per-record (includes static page gen)
+        '--stage', '1-9',  # Stages 1-9 per-record (Stage 10 disabled until SEO template is fixed)
         '--limit', '200',
     ]
     pipeline_ok = run_cmd(pipeline_cmd, "Full pipeline (stages 1-10, up to 200 records)")

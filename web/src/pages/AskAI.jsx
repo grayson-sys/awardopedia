@@ -81,7 +81,7 @@ export default function AskAI() {
                 {msg.opportunities.map((opp, j) => (
                   <a
                     key={j}
-                    href={`/opportunity/${opp.notice_id}`}
+                    href={`/opportunity/${opp.slug || opp.notice_id}`}
                     style={{ textDecoration: 'none' }}
                   >
                     <div style={{

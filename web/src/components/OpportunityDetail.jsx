@@ -96,7 +96,7 @@ function ShareButton({ opp }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const shareUrl = `${window.location.origin}/opportunity/${opp.notice_id}`
+  const shareUrl = `${window.location.origin}/opportunity/${opp.slug || opp.notice_id}`
   const shareTitle = opp.title
   const shareText = `${opp.title} — ${opp.agency_name || 'Federal Contract'}\n\nDeadline: ${opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'TBD'}\n\nView on Awardopedia:`
 

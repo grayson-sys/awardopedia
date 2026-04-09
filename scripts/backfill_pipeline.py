@@ -43,7 +43,16 @@ PROGRESS_FILE = LOG_DIR / 'backfill_progress.json'
 
 
 def db_connect():
-    return psycopg2.connect(DATABASE_URL)
+    """Connect to DB with retry on transient DNS/network errors."""
+    for attempt in range(5):
+        try:
+            return psycopg2.connect(DATABASE_URL)
+        except psycopg2.OperationalError as e:
+            if attempt < 4 and 'could not translate host name' in str(e):
+                log(f"DNS error, retry {attempt + 1}/5 in 30s...")
+                time.sleep(30)
+            else:
+                raise
 
 
 def log(msg: str):

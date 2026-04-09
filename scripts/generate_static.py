@@ -158,6 +158,27 @@ h1 { font-size: 22px; font-weight: 700; color: var(--color-navy); margin-bottom:
   color: var(--color-muted);
 }
 .trust-box strong { color: var(--color-text); }
+.share-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-text);
+  text-decoration: none;
+}
+.share-btn:hover { background: var(--color-navy-light); }
+.share-btn svg { width: 14px; height: 14px; }
 .cta {
   display: inline-block;
   background: var(--color-navy);
@@ -335,55 +356,151 @@ def generate_contract_html(c):
 
 # ── Opportunity HTML ──────────────────────────────────────────────────────────
 
+def _flip_dept(name):
+    """Flip 'Department of X' → 'X Department' for SEO-friendly display."""
+    if not name:
+        return name
+    m = re.match(r'^Department of the (.+)$', name, re.I)
+    if m:
+        return f"{m.group(1)} Department"
+    m = re.match(r'^Department of (.+)$', name, re.I)
+    if m:
+        return f"{m.group(1)} Department"
+    return name
+
+
+def _top_agency(raw):
+    """Extract and flip the top-level agency from a hierarchy string."""
+    if not raw:
+        return 'Federal Government'
+    top = raw.split(' > ')[0].strip()
+    if not top or top.lower() == 'name':
+        return 'Federal Government'
+    return _flip_dept(top)
+
+
+def _set_aside_label(code):
+    """Expand set-aside codes to plain English."""
+    labels = {
+        'SBA': 'Small Business Set-Aside',
+        'SBP': 'Small Business Set-Aside',
+        'Small Business': 'Small Business Set-Aside',
+        '8AN': '8(a) Program',
+        '8A': '8(a) Program',
+        'SDVOSB': 'Service-Disabled Veteran-Owned',
+        'SDVOSBC': 'Service-Disabled Veteran-Owned',
+        'HZC': 'HUBZone',
+        'HZS': 'HUBZone',
+        'WOSB': 'Women-Owned Small Business',
+        'EDWOSB': 'Economically Disadvantaged Women-Owned',
+        'VSA': 'Veteran-Owned Small Business',
+        'VSB': 'Veteran-Owned Small Business',
+    }
+    if not code:
+        return None
+    return labels.get(code, code)
+
+
 def generate_opportunity_html(o):
-    """Generate a static HTML page for an opportunity record (dict)."""
+    """Generate a static HTML page for an opportunity record (dict from joined query)."""
     notice_id = o['notice_id']
     title = o.get('title') or 'Federal Solicitation'
-    agency = o.get('agency_name') or 'Unknown Agency'
-    summary = o.get('llama_summary') or o.get('description') or 'Federal solicitation opportunity.'
-    canonical = f"{SITE_URL}/opportunities/{url_quote(notice_id)}"
+    raw_agency = o.get('agency_name') or ''
+    agency_display = _top_agency(raw_agency)
+    summary = o.get('llama_summary') or ''
+    slug = o.get('slug') or notice_id
+    canonical = f"{SITE_URL}/opportunity/{url_quote(slug)}"
 
-    page_title = f"{esc(title)} — {esc(agency)} Solicitation"
+    # Build an SEO-optimized page title: "Title | Agency | Awardopedia"
+    page_title = f"{title} | {agency_display} | Awardopedia"
 
-    # JSON-LD
+    # Meta description: use AI summary, fall back to a constructed sentence
+    if summary:
+        # Strip any leading whitespace/newlines, take first 155 chars
+        meta_desc = summary.strip().replace('\n', ' ')[:155]
+    else:
+        meta_desc = f"Federal contracting opportunity from {agency_display}."
+
+    # JSON-LD structured data for Google
     jsonld = {
         "@context": "https://schema.org",
         "@type": "GovernmentService",
         "name": title,
-        "description": summary,
+        "description": meta_desc,
         "provider": {
             "@type": "GovernmentOrganization",
-            "name": agency
+            "name": agency_display
         },
-        "areaServed": {
-            "@type": "Country",
-            "name": "United States"
-        },
-        "url": canonical
+        "areaServed": {"@type": "Country", "name": "United States"},
+        "url": canonical,
     }
+    if o.get('naics_description'):
+        jsonld["category"] = o['naics_description']
+    if o.get('place_of_performance_state'):
+        jsonld["serviceArea"] = {
+            "@type": "State",
+            "name": o['place_of_performance_state']
+        }
 
-    recompete_badge = ''
-    if o.get('is_recompete'):
-        recompete_badge = ' <span class="badge badge-amber">Recompete</span>'
+    # Badges
+    recompete_badge = ' <span class="badge badge-amber">Recompete</span>' if o.get('is_recompete') else ''
 
+    # Estimated value
     est_value = '&mdash;'
-    if o.get('estimated_value_min') and o.get('estimated_value_max'):
+    if o.get('estimated_value_text') and o['estimated_value_text'] != 'Not published':
+        est_value = esc(o['estimated_value_text'])
+    elif o.get('estimated_value_min') and o.get('estimated_value_max'):
         est_value = f"{fmt_money(o['estimated_value_min'])} &ndash; {fmt_money(o['estimated_value_max'])}"
     elif o.get('estimated_value_max'):
         est_value = f"Up to {fmt_money(o['estimated_value_max'])}"
     elif o.get('estimated_value_min'):
         est_value = f"From {fmt_money(o['estimated_value_min'])}"
 
+    # Set-aside display
+    set_aside = _set_aside_label(o.get('set_aside_type'))
+
+    # Location
+    city = o.get('place_of_performance_city', '')
+    state = o.get('place_of_performance_state', '')
+    location = f"{city}, {state}" if city and state else city or state or '&mdash;'
+    if city and city == city.upper() and len(city) > 2:
+        location = f"{city.title()}, {state}" if state else city.title()
+
+    # Key requirements
+    key_reqs = o.get('key_requirements')
+    key_reqs_html = ''
+    if key_reqs and isinstance(key_reqs, list) and len(key_reqs) > 0:
+        items = ''.join(f'<li>{esc(r)}</li>' for r in key_reqs[:5])
+        key_reqs_html = f'''
+    <div class="section">
+      <div class="section-title">Key Requirements</div>
+      <ul style="font-size:14px; padding-left:20px; line-height:1.8">{items}</ul>
+    </div>'''
+
+    # Deadline for subtitle
+    deadline = o.get('response_deadline')
+    deadline_str = ''
+    if deadline:
+        from datetime import date
+        if hasattr(deadline, 'strftime'):
+            deadline_str = deadline.strftime('%B %d, %Y')
+        else:
+            deadline_str = str(deadline)
+
+    # Sub-agency from hierarchy
+    parts = raw_agency.split(' > ') if raw_agency else []
+    sub_agency = _flip_dept(parts[1]) if len(parts) > 1 else o.get('sub_agency_name')
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{page_title}</title>
-  <meta name="description" content="{html_escape(summary[:160])}">
+  <title>{html_escape(page_title)}</title>
+  <meta name="description" content="{html_escape(meta_desc)}">
   <link rel="canonical" href="{canonical}">
-  <meta property="og:title" content="{page_title}">
-  <meta property="og:description" content="{html_escape(summary[:160])}">
+  <meta property="og:title" content="{html_escape(page_title)}">
+  <meta property="og:description" content="{html_escape(meta_desc)}">
   <meta property="og:url" content="{canonical}">
   <meta property="og:type" content="website">
   <meta name="robots" content="index, follow">
@@ -396,31 +513,51 @@ def generate_opportunity_html(o):
   {page_header()}
   <div class="container">
     <h1>{esc(title)}{recompete_badge}</h1>
-    <div class="subtitle">{esc(agency)} &middot; Notice: {esc(notice_id)}</div>
+    <div class="subtitle">{esc(agency_display)} &middot; {esc(o.get('solicitation_number') or notice_id[:16])}{f' &middot; <strong>Deadline: {esc(deadline_str)}</strong>' if deadline_str else ''}</div>
 
-    {f'<div class="summary-box">{esc(o["llama_summary"])}</div>' if o.get('llama_summary') else ''}
+    <div class="share-bar">
+      <button class="share-btn" id="copyBtn" onclick="copyLink()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy Link
+      </button>
+      <a class="share-btn" href="mailto:?subject={html_escape(title)}&body={html_escape(title)}%0A{html_escape(agency_display)}%0A%0A{html_escape(canonical)}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        Email
+      </a>
+      <button class="share-btn" id="shareBtn" onclick="nativeShare()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+      </button>
+    </div>
+    <script>
+    function copyLink(){{var b=document.getElementById('copyBtn');navigator.clipboard.writeText(window.location.href).then(function(){{b.textContent='Copied!';setTimeout(function(){{b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Link'}},2000)}})}}
+    function nativeShare(){{navigator.share({{title:'{html_escape(title)}',url:window.location.href}})}}
+    if(navigator.share)document.getElementById('shareBtn').style.display='inline-flex';
+    </script>
+
+    {f'<div class="summary-box">{esc(summary)}</div>' if summary else ''}
+
+    {key_reqs_html}
 
     <div class="section">
-      <div class="section-title">Solicitation Overview</div>
+      <div class="section-title">Solicitation Details</div>
       <div class="grid">
-        <div class="field"><span class="field-label">Notice ID:</span> <span class="field-value">{esc(notice_id)}</span></div>
         <div class="field"><span class="field-label">Solicitation #:</span> <span class="field-value">{esc(o.get('solicitation_number'))}</span></div>
         <div class="field"><span class="field-label">Notice Type:</span> <span class="field-value">{esc(o.get('notice_type'))}</span></div>
         <div class="field"><span class="field-label">Estimated Value:</span> <span class="field-value">{est_value}</span></div>
-        <div class="field"><span class="field-label">Set-Aside:</span> <span class="field-value">{esc(o.get('set_aside_type'))}</span></div>
-        <div class="field"><span class="field-label">Contract Type:</span> <span class="field-value">{esc(o.get('contract_type'))}</span></div>
+        <div class="field"><span class="field-label">Set-Aside:</span> <span class="field-value">{esc(set_aside) if set_aside else '&mdash;'}</span></div>
+        {f'<div class="field"><span class="field-label">Size Standard:</span> <span class="field-value">{esc(o.get("size_standard"))}</span></div>' if o.get('size_standard') else ''}
+        {f'<div class="field"><span class="field-label">Contract Structure:</span> <span class="field-value">{esc(o.get("contract_structure"))}</span></div>' if o.get('contract_structure') else ''}
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">Agency</div>
+      <div class="section-title">Agency & Contact</div>
       <div class="grid">
-        <div class="field"><span class="field-label">Agency:</span> <span class="field-value">{esc(o.get('agency_name'))}</span></div>
-        <div class="field"><span class="field-label">Sub-Agency:</span> <span class="field-value">{esc(o.get('sub_agency_name'))}</span></div>
-        <div class="field"><span class="field-label">Office:</span> <span class="field-value">{esc(o.get('office_name'))}</span></div>
-        <div class="field"><span class="field-label">Contracting Officer:</span> <span class="field-value">{esc(o.get('contracting_officer'))}</span></div>
-        <div class="field"><span class="field-label">CO Email:</span> <span class="field-value">{esc(o.get('contracting_officer_email'))}</span></div>
-        <div class="field"><span class="field-label">CO Phone:</span> <span class="field-value">{esc(o.get('contracting_officer_phone'))}</span></div>
+        <div class="field"><span class="field-label">Agency:</span> <span class="field-value">{esc(agency_display)}</span></div>
+        {f'<div class="field"><span class="field-label">Sub-Agency:</span> <span class="field-value">{esc(sub_agency)}</span></div>' if sub_agency else ''}
+        {f'<div class="field"><span class="field-label">Office:</span> <span class="field-value">{esc(o.get("office_name"))}</span></div>' if o.get('office_name') else ''}
+        {f'<div class="field"><span class="field-label">Contracting Officer:</span> <span class="field-value">{esc(o.get("contracting_officer"))}</span></div>' if o.get('contracting_officer') else ''}
       </div>
     </div>
 
@@ -428,38 +565,27 @@ def generate_opportunity_html(o):
       <div class="section-title">Incumbent</div>
       <div class="grid">
         <div class="field"><span class="field-label">Incumbent:</span> <span class="field-value">{esc(o.get('incumbent_name'))}</span></div>
-        <div class="field"><span class="field-label">Incumbent UEI:</span> <span class="field-value">{esc(o.get('incumbent_uei'))}</span></div>
         <div class="field"><span class="field-label">Related PIID:</span> <span class="field-value">{esc(o.get('related_piid'))}</span></div>
       </div>
     </div>""" if o.get('is_recompete') or o.get('incumbent_name') else ''}
 
     <div class="section">
-      <div class="section-title">Classification</div>
+      <div class="section-title">Classification & Location</div>
       <div class="grid">
         <div class="field"><span class="field-label">NAICS:</span> <span class="field-value">{esc(o.get('naics_code'))} &mdash; {esc(o.get('naics_description'))}</span></div>
-        <div class="field"><span class="field-label">PSC:</span> <span class="field-value">{esc(o.get('psc_code'))}</span></div>
-        <div class="field"><span class="field-label">Place of Performance:</span> <span class="field-value">{esc(o.get('place_of_performance_city'))}, {esc(o.get('place_of_performance_state'))}</span></div>
+        {f'<div class="field"><span class="field-label">PSC:</span> <span class="field-value">{esc(o.get("psc_code"))}</span></div>' if o.get('psc_code') else ''}
+        <div class="field"><span class="field-label">Location:</span> <span class="field-value">{location}</span></div>
+        {f'<div class="field"><span class="field-label">Congressional District:</span> <span class="field-value">{esc(o.get("congressional_district"))}</span></div>' if o.get('congressional_district') else ''}
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Key Dates</div>
-      <div class="grid">
-        <div class="field"><span class="field-label">Posted:</span> <span class="field-value">{fmt_date(o.get('posted_date'))}</span></div>
-        <div class="field"><span class="field-label">Response Deadline:</span> <span class="field-value">{fmt_date(o.get('response_deadline'))}</span></div>
-        <div class="field"><span class="field-label">Archive Date:</span> <span class="field-value">{fmt_date(o.get('archive_date'))}</span></div>
-      </div>
-    </div>
-
-    {f'<div class="section"><div class="section-title">Description</div><p style="font-size:14px">{esc(o.get("description"))}</p></div>' if o.get('description') else ''}
-
-    <a class="cta" href="{SITE_URL}/#opportunity/{url_quote(notice_id)}">View Interactive Details &amp; Generate Report &rarr;</a>
+    <a class="cta" href="{SITE_URL}/opportunity/{url_quote(notice_id)}">View Full Details &amp; Generate Intelligence Report &rarr;</a>
 
     <div class="trust-box">
-      <strong>Data Sources</strong><br>
+      <strong>About This Page</strong><br>
       Solicitation data sourced from <a href="https://sam.gov" rel="noopener">SAM.gov</a>.
-      {f'<a href="{html_escape(o["sam_url"])}" rel="noopener">View on SAM.gov</a>' if o.get('sam_url') else ''}
-      <br>AI-generated summary by Llama 3.2. Last synced: {fmt_date(o.get('last_synced'))}.
+      {f'<a href="{html_escape(o["sam_url"])}" rel="noopener">View original on SAM.gov</a>' if o.get('sam_url') else ''}
+      <br>Summary generated by Awardopedia AI from solicitation documents and metadata.
     </div>
   </div>
   {page_footer()}
@@ -514,9 +640,8 @@ def get_s3_client():
     try:
         import boto3
     except ImportError:
-        print("ERROR: boto3 not installed. Install with: python3 -m pip install boto3")
-        print("  Or use a venv: python3 -m venv /tmp/s3venv && /tmp/s3venv/bin/pip install boto3")
-        sys.exit(1)
+        print("WARNING: boto3 not installed — static pages saved locally only")
+        return None
 
     session = boto3.session.Session()
     return session.client(
@@ -613,7 +738,15 @@ def generate_page_for_opportunity(notice_id: str) -> bool:
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM opportunities WHERE notice_id = %s", [notice_id])
+        cur.execute("""
+            SELECT o.*,
+                   i.key_requirements, i.size_standard, i.contract_structure,
+                   i.performance_address, i.congressional_district,
+                   i.estimated_value_text, i.award_basis
+            FROM opportunities o
+            LEFT JOIN opportunity_intel i USING (notice_id)
+            WHERE o.notice_id = %s
+        """, [notice_id])
         row = cur.fetchone()
         if not row:
             print(f"  [static] {notice_id} not found in DB — skipping")
@@ -621,13 +754,14 @@ def generate_page_for_opportunity(notice_id: str) -> bool:
             return False
 
         o = dict(row)
+        slug = o.get('slug') or notice_id
         html = generate_opportunity_html(o)
         OPPORTUNITIES_DIR.mkdir(parents=True, exist_ok=True)
-        fpath = OPPORTUNITIES_DIR / f"{notice_id}.html"
+        fpath = OPPORTUNITIES_DIR / f"{slug}.html"
         fpath.write_text(html, encoding='utf-8')
 
         s3 = get_s3_client()
-        remote_key = f"opportunities/{notice_id}.html"
+        remote_key = f"opportunities/{slug}.html"
         bucket = os.environ.get('DO_SPACES_BUCKET', 'awardopedia-static')
         region = os.environ.get('DO_SPACES_REGION', 'nyc3')
         static_url = f"https://{bucket}.{region}.digitaloceanspaces.com/{remote_key}"
@@ -635,9 +769,9 @@ def generate_page_for_opportunity(notice_id: str) -> bool:
         if s3:
             upload_file(s3, fpath, remote_key)
             mark_static_generated(conn, 'opportunities', 'notice_id', notice_id, static_url)
-            print(f"  [static] {notice_id} → uploaded ✓")
+            print(f"  [static] {slug} → uploaded ✓")
         else:
-            print(f"  [static] {notice_id} → {fpath} (no S3 client)")
+            print(f"  [static] {slug} → {fpath} (no S3 client)")
 
         conn.close()
         return True

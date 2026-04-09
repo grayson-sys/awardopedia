@@ -86,8 +86,16 @@ FAR_CLAUSE_RE = re.compile(r'\b5[12]\.\d{3}-\d+\b')
 # ═════════════════════════════════════════════════════════════════════════════
 
 def db_connect():
-    """Return a psycopg2 connection using DATABASE_URL."""
-    return psycopg2.connect(DATABASE_URL)
+    """Return a psycopg2 connection using DATABASE_URL. Retries on DNS errors."""
+    for attempt in range(5):
+        try:
+            return psycopg2.connect(DATABASE_URL)
+        except psycopg2.OperationalError as e:
+            if attempt < 4 and 'could not translate host name' in str(e):
+                print(f"  DNS error, retry {attempt + 1}/5 in 30s...")
+                time.sleep(30)
+            else:
+                raise
 
 
 def log(stage: int, notice_id: str, msg: str):
@@ -95,6 +103,21 @@ def log(stage: int, notice_id: str, msg: str):
     tag = f"[S{stage}]" if stage else "[  ]"
     nid = (notice_id or '???')[:16]
     print(f"  {tag} {nid} — {msg}")
+
+
+def _generate_slug(title: str, notice_id: str) -> str:
+    """Generate SEO slug: slugified-title-shortid."""
+    import unicodedata
+    if not title:
+        return notice_id[:8]
+    s = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode()
+    s = s.lower()
+    s = re.sub(r'[^a-z0-9]+', '-', s)
+    s = s.strip('-')
+    s = re.sub(r'-{2,}', '-', s)
+    if len(s) > 60:
+        s = s[:60].rsplit('-', 1)[0]
+    return f"{s}-{notice_id[:8]}"
 
 
 def strip_boilerplate(text: str) -> tuple:
@@ -1902,6 +1925,14 @@ def flush_to_db(rec: dict, dry_run: bool = False):
     if enrichment.get('naics_description'):
         updates['naics_description'] = enrichment['naics_description']
 
+    # Generate slug if missing
+    cur.execute("SELECT slug FROM opportunities WHERE notice_id = %s", [notice_id])
+    existing_slug = cur.fetchone()
+    if existing_slug and not existing_slug[0]:
+        title = rec.get('fields', {}).get('title') or ''
+        slug = _generate_slug(title, notice_id)
+        updates['slug'] = slug
+
     if updates:
         set_clause = ', '.join(f"{k} = %s" for k in updates)
         cur.execute(
@@ -2038,7 +2069,7 @@ STAGE_FUNCTIONS = {
     7:  stage_7_enrichment,
     8:  stage_8_congressional,
     9:  stage_9_link_check,
-    10: stage_10_static_page,
+    # 10: stage_10_static_page,  # DISABLED — template needs SEO fixes before bulk generation
     # 11, 12: handled separately in run_pipeline (batch operations, not per-record)
 }
 
