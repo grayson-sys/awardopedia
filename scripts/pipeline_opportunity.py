@@ -2271,7 +2271,7 @@ def stage_11_award_match(dry_run: bool = False):
     if not dry_run:
         cur.execute("""
             INSERT INTO opportunity_intel (notice_id, hidden)
-            SELECT o.notice_id FROM opportunities o
+            SELECT o.notice_id, TRUE FROM opportunities o
             LEFT JOIN opportunity_intel i USING (notice_id)
             WHERE o.notice_type = 'Award Notice'
               AND (i.hidden IS NOT TRUE OR i.notice_id IS NULL)

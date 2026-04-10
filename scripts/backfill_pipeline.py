@@ -200,11 +200,12 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
     conn.close()
 
     total = len(all_records)
-    offset = progress.get('summaries_offset', 0) if progress else 0
-    remaining = all_records[offset:]
+    # Don't use stale offset — the query returns "still missing" so we always
+    # process from the start of the current queue. New records added since the
+    # last run will be at the end of the queue and naturally get processed.
+    remaining = all_records
 
     print(f"  Total needing summaries: {total}")
-    print(f"  Already done (prior runs): {offset}")
     print(f"  Remaining: {len(remaining)}")
 
     if not remaining or dry_run:
@@ -220,7 +221,7 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
         for i, row in enumerate(batch, 1):
             notice_id = row['notice_id']
             title = (row.get('title') or '')[:55]
-            print(f"  [{offset + batch_start + i}/{total}] {title}")
+            print(f"  [{batch_start + i}/{total}] {title}")
 
             # Build pipeline record from DB
             rec = _build_pipeline_record(notice_id)
@@ -250,7 +251,7 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
                 progress['summaries_failed'] += 1
 
             # QC spot-check: every 100th record gets a Sonnet audit
-            record_num = offset + batch_start + i
+            record_num = batch_start + i
             if record_num % 100 == 0 and progress['summaries_done'] > 0:
                 qc_score = _qc_spot_check(notice_id)
                 if qc_score is not None:
@@ -261,8 +262,7 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
             # Be gentle
             time.sleep(0.5)
 
-        # Checkpoint after each batch
-        progress['summaries_offset'] = offset + batch_start + len(batch)
+        # Checkpoint after each batch (counter only, no offset)
         save_progress(progress)
         log(f"Checkpoint saved: {progress['summaries_done']} done, {progress['summaries_failed']} failed")
 

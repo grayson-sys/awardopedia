@@ -60,7 +60,7 @@ def main():
         SELECT notice_id, slug, response_deadline
         FROM opportunities
         WHERE response_deadline < CURRENT_DATE
-          AND static_page_generated = true
+          AND report_generated = true
           AND slug IS NOT NULL
     """)
     expired = cur.fetchall()
@@ -104,7 +104,7 @@ def main():
         conn.autocommit = True
         cur.execute("""
             UPDATE opportunities
-            SET static_page_generated = false, report_url = NULL
+            SET report_generated = false, report_url = NULL
             WHERE notice_id = %s
         """, [nid])
 

@@ -121,15 +121,13 @@ def main():
     log("STEP 2: Run full pipeline (stages 1-9) on open opportunities")
     log("=" * 60)
 
-    # Run pipeline on all open opportunities (deadline >= today)
-    # The pipeline will skip records that already have complete data
-    # Cap at 200/night to avoid timeout — backfill_pipeline.py handles the bulk
+    # Run pipeline on all open opportunities + records missing enrichment
+    # No limit — process every new record SAM.gov gave us
     pipeline_cmd = [
         'python3', str(scripts_dir / 'pipeline_opportunity.py'),
         '--stage', '1-9',  # Stages 1-9 per-record (Stage 10 disabled until SEO template is fixed)
-        '--limit', '200',
     ]
-    pipeline_ok = run_cmd(pipeline_cmd, "Full pipeline (stages 1-10, up to 200 records)")
+    pipeline_ok = run_cmd(pipeline_cmd, "Full pipeline (stages 1-9, all needed records)")
 
     # ── Step 3: Match Award Notices to solicitations ────────────────────────
     log("\n" + "=" * 60)
