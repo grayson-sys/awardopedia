@@ -159,10 +159,12 @@ def map_opportunity(record: Dict) -> Dict:
         # Notice type - important for filtering later
         'notice_type': trunc(record.get('type'), 100),
 
-        # Agency
+        # Agency — store raw hierarchy so Stage 7 can normalize it via agency_tree
+        # Don't write a half-baked agency_name; let the pipeline produce the canonical form
         'agency_name': trunc(record.get('fullParentPathName', '').split('.')[0] if record.get('fullParentPathName') else record.get('department'), 500),
         'sub_agency_name': trunc(record.get('subtierAgency'), 500),
         'office_name': trunc(record.get('office'), 500),
+        'raw_agency_hierarchy': record.get('fullParentPathName'),
 
         # Dates
         'posted_date': parse_date(record.get('postedDate')),
@@ -208,6 +210,7 @@ def insert_opportunity(opp: Dict, conn) -> bool:
             INSERT INTO opportunities (
                 notice_id, solicitation_number, title, description,
                 notice_type, agency_name, sub_agency_name, office_name,
+                raw_agency_hierarchy,
                 posted_date, response_deadline, archive_date,
                 naics_code, psc_code, set_aside_type,
                 place_of_performance_city, place_of_performance_state,
@@ -217,6 +220,7 @@ def insert_opportunity(opp: Dict, conn) -> bool:
             ) VALUES (
                 %(notice_id)s, %(solicitation_number)s, %(title)s, %(description)s,
                 %(notice_type)s, %(agency_name)s, %(sub_agency_name)s, %(office_name)s,
+                %(raw_agency_hierarchy)s,
                 %(posted_date)s, %(response_deadline)s, %(archive_date)s,
                 %(naics_code)s, %(psc_code)s, %(set_aside_type)s,
                 %(place_of_performance_city)s, %(place_of_performance_state)s,
@@ -231,6 +235,7 @@ def insert_opportunity(opp: Dict, conn) -> bool:
                 response_deadline = COALESCE(EXCLUDED.response_deadline, opportunities.response_deadline),
                 attachments = COALESCE(EXCLUDED.attachments, opportunities.attachments),
                 sam_url = COALESCE(EXCLUDED.sam_url, opportunities.sam_url),
+                raw_agency_hierarchy = COALESCE(EXCLUDED.raw_agency_hierarchy, opportunities.raw_agency_hierarchy),
                 last_synced = NOW()
         """, opp)
         conn.commit()

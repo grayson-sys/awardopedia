@@ -1529,12 +1529,18 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
             "UPDATE opportunities SET agency_tree_id = %s WHERE notice_id = %s",
             [enrichment['agency_tree_id'], notice_id]
         )
-    # Guard: never write the literal string 'name' as agency_name (parser bug fingerprint)
-    if enrichment.get('agency_name') and enrichment['agency_name'].strip().lower() != 'name':
-        cur.execute(
-            "UPDATE opportunities SET agency_name = %s WHERE notice_id = %s",
-            [enrichment['agency_name'], notice_id]
-        )
+    # Guard: only write agency_name when it's been normalized through the tree
+    # (canonical format has mixed case or " > " separators, never raw ALL CAPS)
+    new_agency = enrichment.get('agency_name', '')
+    if new_agency and new_agency.strip().lower() != 'name':
+        is_canonical = ' > ' in new_agency or any(c.islower() for c in new_agency)
+        if is_canonical:
+            cur.execute(
+                "UPDATE opportunities SET agency_name = %s WHERE notice_id = %s",
+                [new_agency, notice_id]
+            )
+        else:
+            log(0, notice_id, f"REFUSED to write raw agency format: {new_agency[:50]}")
     if enrichment.get('sub_agency_name'):
         cur.execute(
             "UPDATE opportunities SET sub_agency_name = %s WHERE notice_id = %s",
