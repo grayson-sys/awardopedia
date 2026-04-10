@@ -1529,7 +1529,8 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
             "UPDATE opportunities SET agency_tree_id = %s WHERE notice_id = %s",
             [enrichment['agency_tree_id'], notice_id]
         )
-    if enrichment.get('agency_name'):
+    # Guard: never write the literal string 'name' as agency_name (parser bug fingerprint)
+    if enrichment.get('agency_name') and enrichment['agency_name'].strip().lower() != 'name':
         cur.execute(
             "UPDATE opportunities SET agency_name = %s WHERE notice_id = %s",
             [enrichment['agency_name'], notice_id]
