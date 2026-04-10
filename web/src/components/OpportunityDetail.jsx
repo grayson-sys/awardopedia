@@ -665,6 +665,41 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
   const [showReport, setShowReport] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const [savingOpp, setSavingOpp] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editFields, setEditFields] = useState({})
+  const [editSubmitted, setEditSubmitted] = useState(false)
+  const [editExplanation, setEditExplanation] = useState('')
+
+  function startEditing() {
+    if (!user) { onSignIn?.(); return }
+    setEditFields(Object.fromEntries(EDITABLE_FIELDS.map(f => [f.key, opp[f.key] || ''])))
+    setEditing(true)
+    setEditSubmitted(false)
+    setEditExplanation('')
+  }
+
+  const editChanged = editing ? Object.fromEntries(
+    Object.entries(editFields).filter(([k, v]) => v.trim() !== (opp[k] || '').trim())
+  ) : {}
+  const hasEditChanges = Object.keys(editChanged).length > 0
+
+  async function submitEdit(e) {
+    e.preventDefault()
+    if ((!hasEditChanges && !editExplanation.trim()) || !user) return
+    try {
+      await fetch(`/api/opportunities/${opp.notice_id}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          report_type: 'edit_suggestion',
+          suggested_fields: hasEditChanges ? editChanged : null,
+          details: editExplanation.trim() || null,
+        }),
+      })
+      setEditSubmitted(true)
+      setEditing(false)
+    } catch {}
+  }
 
   const hasPdfs = Array.isArray(opp.attachments) && opp.attachments.some(a => !a.type || a.type === 'file')
 
@@ -719,14 +754,11 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
             </button>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
-                className="btn btn-ghost"
-                onClick={() => {
-                  const el = document.getElementById('edit-form')
-                  if (el) el.scrollIntoView({ behavior: 'smooth' })
-                }}
+                className={`btn ${editing ? 'btn-navy' : 'btn-ghost'}`}
+                onClick={() => editing ? setEditing(false) : startEditing()}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
               >
-                ✏️ Edit this record
+                ✏️ {editing ? 'Cancel editing' : 'Edit this record'}
               </button>
               <ShareButton opp={opp} />
               <button
@@ -740,10 +772,23 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               </button>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1>{opp.title}</h1>
-            {opp.is_recompete && <span className="badge badge-amber">RECOMPETE</span>}
-          </div>
+          {editSubmitted && (
+            <div style={{ background: '#D1FAE5', border: '1px solid #10B981', borderRadius: 6, padding: '10px 14px', marginBottom: 12 }}>
+              <span style={{ fontSize: 13, color: '#065F46', fontWeight: 600 }}>✓ Edit submitted — we'll review and apply it. Thanks for improving this record.</span>
+            </div>
+          )}
+          {editing ? (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', marginBottom: 3 }}>Title</div>
+              <input type="text" value={editFields.title || ''} onChange={e => setEditFields(f => ({ ...f, title: e.target.value }))}
+                style={{ width: '100%', padding: '8px 12px', fontSize: 18, fontWeight: 700, fontFamily: 'inherit', border: '2px solid var(--color-navy)', borderRadius: 6, boxSizing: 'border-box' }} />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h1>{opp.title}</h1>
+              {opp.is_recompete && <span className="badge badge-amber">RECOMPETE</span>}
+            </div>
+          )}
           <div className="detail-header-meta">
             <span>{agency}{subAgency ? ` — ${subAgency}` : ''}</span>
             {opp.solicitation_number && <><span>·</span><span>Solicitation: {opp.solicitation_number}</span></>}
@@ -807,7 +852,14 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
         <div className="detail-layout">
           <div>
             {/* AI Summary */}
-            {opp.llama_summary ? (
+            {editing ? (
+              <div className="card" style={{ borderLeft: '3px solid var(--color-navy)', marginBottom: 16 }}>
+                <div className="section-title">Summary</div>
+                <textarea value={editFields.llama_summary || ''} rows={4}
+                  onChange={e => setEditFields(f => ({ ...f, llama_summary: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: 14, fontFamily: 'inherit', border: '2px solid var(--color-navy)', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.7 }} />
+              </div>
+            ) : opp.llama_summary ? (
               <div className="card" style={{ borderLeft: '3px solid var(--color-amber)', marginBottom: 16 }}>
                 <div className="section-title">AI Summary</div>
                 <p style={{ fontSize: 14, lineHeight: 1.7 }}>{opp.llama_summary}</p>
@@ -966,9 +1018,20 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
                 </div>
                 <div className="field">
                   <span className="field-label">Place of Performance</span>
-                  <span className="field-value">
-                    {fmtAddress(opp.performance_address, opp.place_of_performance_city, opp.place_of_performance_state) || '—'}
-                  </span>
+                  {editing ? (
+                    <span className="field-value" style={{ display: 'flex', gap: 6 }}>
+                      <input type="text" value={editFields.place_of_performance_city || ''} placeholder="City"
+                        onChange={e => setEditFields(f => ({ ...f, place_of_performance_city: e.target.value }))}
+                        style={{ flex: 1, padding: '4px 8px', fontSize: 13, border: '2px solid var(--color-navy)', borderRadius: 4 }} />
+                      <input type="text" value={editFields.place_of_performance_state || ''} placeholder="ST" maxLength={2}
+                        onChange={e => setEditFields(f => ({ ...f, place_of_performance_state: e.target.value.toUpperCase() }))}
+                        style={{ width: 50, padding: '4px 8px', fontSize: 13, border: '2px solid var(--color-navy)', borderRadius: 4, textTransform: 'uppercase' }} />
+                    </span>
+                  ) : (
+                    <span className="field-value">
+                      {fmtAddress(opp.performance_address, opp.place_of_performance_city, opp.place_of_performance_state) || '—'}
+                    </span>
+                  )}
                 </div>
                 {opp.wage_floor && (
                   <div className="field">
@@ -1082,6 +1145,28 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
                     </>
                   )
                 })()}
+                {editing && (
+                  <form onSubmit={submitEdit} className="card" style={{ borderLeft: '3px solid var(--color-navy)', marginBottom: 16, padding: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', marginBottom: 4 }}>
+                      Explanation <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional — what's wrong and how do you know?)</span>
+                    </div>
+                    <textarea value={editExplanation} rows={2} onChange={e => setEditExplanation(e.target.value)}
+                      placeholder='e.g. "The PDF says the project is in Fort Washington, MD — SAM.gov shows the contracting office in Santa Fe"'
+                      style={{ width: '100%', padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--color-border)', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box', marginBottom: 10 }} />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button type="submit" className="btn btn-navy btn-sm" disabled={!hasEditChanges && !editExplanation.trim()}>
+                        Submit {hasEditChanges ? `(${Object.keys(editChanged).length} field${Object.keys(editChanged).length > 1 ? 's' : ''} changed)` : ''}
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+                      {hasEditChanges && (
+                        <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
+                          Changed: {Object.keys(editChanged).join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  </form>
+                )}
+
                 {opp.sam_url_alive !== false ? (
                   <a href={opp.sam_url || `https://sam.gov/opp/${opp.notice_id}/view`} target="_blank" rel="noopener noreferrer" className="btn btn-navy btn-sm" style={{ alignSelf: 'flex-start' }}>
                     View full solicitation on SAM.gov ↗
@@ -1121,7 +1206,7 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               </button>
             </div>
 
-            <SuggestEditForm opp={opp} user={user} token={token} onSignIn={onSignIn} />
+            {/* SuggestEditForm moved to main content area — edit button is in the top bar */}
             <FeedbackForm noticeId={opp.notice_id} />
           </div>
         </div>
