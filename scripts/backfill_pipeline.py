@@ -185,13 +185,21 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
     conn = db_connect()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Find records that need summaries and aren't hidden
+    # Find records that need summaries — only biddable types that show in search
+    # Award Notices, Sources Sought, Special Notice, Justification are filtered out
     cur.execute("""
         SELECT o.notice_id, o.title, o.notice_type
         FROM opportunities o
         LEFT JOIN opportunity_intel i USING (notice_id)
         WHERE o.llama_summary IS NULL
           AND (i.hidden IS NOT TRUE)
+          AND o.notice_type IN (
+              'Combined Synopsis/Solicitation',
+              'Solicitation',
+              'Presolicitation',
+              'Sale of Surplus Property',
+              'Consolidate/(Substantially) Bundle'
+          )
         ORDER BY
             CASE WHEN o.response_deadline >= CURRENT_DATE THEN 0 ELSE 1 END,
             o.response_deadline ASC NULLS LAST

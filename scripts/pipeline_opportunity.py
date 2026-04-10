@@ -2664,12 +2664,23 @@ def _load_existing_records(args) -> list:
     if args.notice_id:
         cur.execute("SELECT * FROM opportunities WHERE notice_id = %s", [args.notice_id])
     else:
+        # Only process biddable types — Award Notices go through Stage 11,
+        # Sources Sought / Special Notice / Justification are filtered from search
         limit_clause = f"LIMIT {args.limit}" if args.limit else ""
         cur.execute(f"""
             SELECT * FROM opportunities
-            WHERE (response_deadline >= CURRENT_DATE OR response_deadline IS NULL)
-               OR llama_summary IS NULL
-               OR agency_tree_id IS NULL
+            WHERE notice_type IN (
+                'Combined Synopsis/Solicitation',
+                'Solicitation',
+                'Presolicitation',
+                'Sale of Surplus Property',
+                'Consolidate/(Substantially) Bundle'
+            )
+            AND (
+                (response_deadline >= CURRENT_DATE OR response_deadline IS NULL)
+                OR llama_summary IS NULL
+                OR agency_tree_id IS NULL
+            )
             ORDER BY
                 CASE WHEN llama_summary IS NULL THEN 0 ELSE 1 END,
                 CASE WHEN agency_tree_id IS NULL THEN 0 ELSE 1 END,
