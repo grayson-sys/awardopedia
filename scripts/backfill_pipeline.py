@@ -185,14 +185,15 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
     conn = db_connect()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Find records that need summaries — only biddable types that show in search
-    # Award Notices, Sources Sought, Special Notice, Justification are filtered out
+    # Find records that need summaries — only BIDDABLE and NOT EXPIRED.
+    # Users can't bid on closed opportunities, so there's no point enriching them.
     cur.execute("""
         SELECT o.notice_id, o.title, o.notice_type
         FROM opportunities o
         LEFT JOIN opportunity_intel i USING (notice_id)
         WHERE o.llama_summary IS NULL
           AND (i.hidden IS NOT TRUE)
+          AND (o.response_deadline >= CURRENT_DATE OR o.response_deadline IS NULL)
           AND o.notice_type IN (
               'Combined Synopsis/Solicitation',
               'Solicitation',
@@ -200,9 +201,7 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
               'Sale of Surplus Property',
               'Consolidate/(Substantially) Bundle'
           )
-        ORDER BY
-            CASE WHEN o.response_deadline >= CURRENT_DATE THEN 0 ELSE 1 END,
-            o.response_deadline ASC NULLS LAST
+        ORDER BY o.response_deadline ASC NULLS LAST
     """)
     all_records = cur.fetchall()
     conn.close()
@@ -393,7 +392,7 @@ def fix_low_quality_summaries(batch_size: int = 50, dry_run: bool = False,
 # QC SPOT-CHECK (Sonnet audits every 100th record)
 # ═════════════════════════════════════════════════════════════════════════════
 
-QC_PROMPT = """You are auditing a single federal contracting opportunity record for data quality.
+QC_PROMPT = """You are auditing a federal contracting opportunity record for data quality.
 
 RECORD:
 Title: {title}
@@ -406,19 +405,33 @@ Contracting Officer: {co}
 Notice Type: {notice_type}
 Has PDFs: {has_pdfs}
 
-Check ALL of these:
-1. Does the summary read like clear, professional plain English? (No AI artifacts like "Here is", no raw codes, no dates/deadlines)
-2. Is the NAICS description filled in and matching the code?
-3. Is the agency name human-readable (not garbled or ALL CAPS)?
-4. Does the title make sense in plain English?
-5. Are all critical fields populated (summary, NAICS desc, agency, state)?
+YOUR JOB — grade this record as "the best version of itself given available inputs."
 
-IMPORTANT: Some records are legitimately thin — small parts purchases (bolts, shims, filters) from DLA or similar agencies often have no PDFs, just a title and basic metadata. A short but accurate summary for a simple parts buy is CORRECT, not a quality failure. Judge the summary against the COMPLEXITY of the opportunity, not against an ideal length. A 1-sentence summary for a $500 bolt purchase is perfect. A 1-sentence summary for a $50M construction project is a failure.
+Do NOT penalize a record for missing data that SAM.gov never provided.
+If there are no PDFs, the record can't have a detailed scope of work.
+If SAM.gov gave us only metadata, a metadata-level summary is correct.
+If the title was a cryptic federal abbreviation and we decoded it to plain English, that's a WIN.
+
+ONLY penalize for things we control and got wrong:
+1. Raw codes or garbled text left in the title that COULD have been cleaned ("SCR CAP SLFLKG" is bad, "N00019-26-R-0018" prefix is bad)
+2. Summary has AI artifacts ("Here is the edited text:", "The following opportunity:", etc.)
+3. Agency still in ALL CAPS or raw SAM format when it should be normalized
+4. Summary mentions dates/deadlines (it should be timeless)
+5. NAICS code present but description missing (we have the lookup table)
+6. Summary mentions the wrong state or location that contradicts the agency
+7. Summary is a literal dump of the address or a single non-sentence fragment
+
+Do NOT penalize for:
+- Short summaries when the opportunity is genuinely simple (parts buys, routine maintenance)
+- No PDFs (not our fault)
+- Place of performance being the contracting office when no PDFs exist to extract the real location
+- Missing extraction fields (size_standard, wage_floor, etc.) when there are no PDFs
+- Generic language when the opportunity is generic
 
 Return ONLY a JSON object:
-{{"score": 0-100, "issues": ["issue 1", "issue 2"], "pass": true/false}}
+{{"score": 0-100, "issues": ["specific thing we got wrong", ...], "pass": true/false}}
 
-Score 95+ = pass. Below 95 = fail."""
+A record that's "the best version of itself" scores 95+. Score <95 means WE made a mistake that could be fixed by running the pipeline again or changing the code."""
 
 
 def _qc_spot_check(notice_id: str) -> int:

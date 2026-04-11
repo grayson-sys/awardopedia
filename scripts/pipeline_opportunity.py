@@ -844,10 +844,43 @@ def stage_5_ai_extract(rec: dict, dry_run: bool = False) -> dict:
     notice_id = rec['notice_id']
     det = rec.get('det_extract', {})
     combined_text = rec.get('combined_text', '')
+    fields_obj = rec.get('fields', {})
 
     if not combined_text:
-        log(5, notice_id, "No PDF text — skipping AI extraction")
+        log(5, notice_id, "No PDF text — checking title for location hints")
         rec['ai_extract'] = {}
+        # Even without PDFs, try to extract place of performance from the title
+        # SAM.gov often puts contracting office location in city/state but the
+        # title references the actual work location (e.g. "Nevada Highway Project"
+        # while city says LAKEWOOD, CO)
+        title = fields_obj.get('title') or ''
+        current_state = fields_obj.get('place_of_performance_state') or ''
+        if title and not dry_run:
+            try:
+                loc_prompt = (
+                    f"This federal contracting opportunity has the title:\n\n"
+                    f"  {title}\n\n"
+                    f"SAM.gov says it's in: {fields_obj.get('place_of_performance_city','?')}, {current_state}\n\n"
+                    f"Does the title mention a specific state or city where the work will be performed "
+                    f"that's different from what SAM.gov says? This matters because SAM.gov often lists "
+                    f"the contracting office location instead of the work site.\n\n"
+                    f"Return ONLY a JSON object:\n"
+                    f'{{"performance_city": "City name or null", "performance_state": "2-letter abbreviation or null", '
+                    f'"confident": true/false}}\n\n'
+                    f"Set both to null if the title doesn't clearly indicate a different location. "
+                    f"Set confident=true ONLY if you are sure the title names a specific work location "
+                    f"(e.g. 'Nevada Highway Project' → NV, 'Fort Hood Range Maintenance' → TX)."
+                )
+                result, tokens = call_claude_json(loc_prompt, max_tokens=128)
+                if result.get('confident') and result.get('performance_state'):
+                    rec['ai_extract']['performance_city'] = result.get('performance_city')
+                    rec['ai_extract']['performance_state'] = result.get('performance_state')
+                    log(5, notice_id, f"Location from title: {result.get('performance_city')}, {result.get('performance_state')}")
+                    rec.setdefault('_tokens', {'prompt': 0, 'completion': 0, 'total': 0})
+                    for k in rec['_tokens']:
+                        rec['_tokens'][k] += tokens[k]
+            except Exception as e:
+                log(5, notice_id, f"Title location check failed: {e}")
         return rec
 
     # Find which fields are still NULL
@@ -872,7 +905,6 @@ def stage_5_ai_extract(rec: dict, dry_run: bool = False) -> dict:
         combined_text = ' '.join(words[:8000]) + '\n[... truncated ...]'
 
     fields_desc = '\n'.join(f'  - {k}: {desc}' for k, desc in null_fields.items())
-    fields_obj = rec.get('fields', {})
 
     prompt = AI_EXTRACT_PROMPT.format(
         pdf_text=combined_text,
@@ -2671,8 +2703,11 @@ def _load_existing_records(args) -> list:
     if args.notice_id:
         cur.execute("SELECT * FROM opportunities WHERE notice_id = %s", [args.notice_id])
     else:
-        # Only process biddable types — Award Notices go through Stage 11,
-        # Sources Sought / Special Notice / Justification are filtered from search
+        # Only process records that are BOTH:
+        #   1. A biddable notice type (users can actually bid on it)
+        #   2. Still open (deadline is in the future or unknown)
+        # Skip expired records — no point spending Claude tokens on things
+        # nobody can bid on anymore.
         limit_clause = f"LIMIT {args.limit}" if args.limit else ""
         cur.execute(f"""
             SELECT * FROM opportunities
@@ -2683,10 +2718,12 @@ def _load_existing_records(args) -> list:
                 'Sale of Surplus Property',
                 'Consolidate/(Substantially) Bundle'
             )
+            AND (response_deadline >= CURRENT_DATE OR response_deadline IS NULL)
             AND (
-                (response_deadline >= CURRENT_DATE OR response_deadline IS NULL)
-                OR llama_summary IS NULL
+                llama_summary IS NULL
                 OR agency_tree_id IS NULL
+                OR agency_name = UPPER(agency_name)
+                OR agency_name LIKE 'DEPT OF%'
             )
             ORDER BY
                 CASE WHEN llama_summary IS NULL THEN 0 ELSE 1 END,
