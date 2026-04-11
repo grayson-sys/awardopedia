@@ -992,20 +992,31 @@ Set-aside: {set_aside}
 Notice type: {notice_type}
 Location: {city}, {state}
 
+CRITICAL RULES (violating these ruins the record):
+
+* The agency name "{agency}" must appear in the summary EXACTLY as written, not inverted or reworded. Do NOT write "Department of State" as "The State Department of", "Defense Department" as "The Defense Department of", etc.
+* If NAICS/Industry is blank, DO NOT guess what the item is — describe it generically using only the title. Never speculate ("arc chute" is NOT a parachute; without NAICS context, say "The [agency] is procuring [exactly what the title says]").
+* NEVER mention dates, deadlines, urgency, dollar values, estimated contract size, bid windows, or competition level. These display separately and your guesses will be wrong.
+* NEVER speculate about things NOT in the metadata ("This is a new requirement", "expect strong competition", "bid window is unclear", "likely to be unclear" — all FORBIDDEN).
+* If location has a 2-letter country mismatch ("Paris, DC" clearly means Paris, France not Washington DC), ignore the state field and describe the city only.
+
 INSTRUCTIONS:
 
 1. clean_title: Create a plain-English headline a business owner can understand.
-   - DECODE all acronyms: airport codes (EWR→Newark, LAX→Los Angeles), FAA (ATCT→Air Traffic Control Tower), military (DFAC→Dining Facility, CONUS→Continental US).
+   - PRESERVE known abbreviations: EV (electric vehicle), IT, HVAC, LED, USB, GPS, UAV, HQ, VA.
+   - DECODE unknown acronyms: airport codes (EWR→Newark, LAX→Los Angeles), FAA (ATCT→Air Traffic Control Tower), military (DFAC→Dining Facility, CONUS→Continental US).
    - REMOVE: solicitation numbers, contract codes, project IDs, dates, periods (Base YR, Option Year, FY26).
    - EXPAND: SVCS→Services, MAINT→Maintenance, EQUIP→Equipment, CONSTR→Construction.
-   - ALL CAPS → Title Case.
+   - ALL CAPS → Title Case (but keep preserved abbreviations like EV, IT, HVAC in caps).
    - JUST the title. No quotes, no "Here is...", no preamble.
 
 2. summary: Write 2-3 plain sentences explaining what the government is buying.
-   - TIMELESS: NEVER mention dates, deadlines, urgency. No "closes on", no "deadline", no "soon". Write as permanent reference.
+   - STICK TO FACTS from the metadata. Don't make up details you don't have.
+   - If you genuinely don't know what the item is (because NAICS is blank), just restate the title in a clear sentence.
+   - TIMELESS: Write as permanent reference text. No dates, no "upcoming", no "soon".
    - Start directly. FORBIDDEN: "Here is", "The following", "This opportunity".
 
-3. key_requirements: Based on the industry, list 1-2 typical requirements. Empty array if unsure.
+3. key_requirements: Based on the industry, list 1-2 typical requirements. Empty array if unsure or NAICS is blank.
 
 RESPOND WITH ONLY THIS JSON — no markdown, no preamble:
 
@@ -1535,6 +1546,9 @@ def stage_7_enrichment(rec: dict, dry_run: bool = False) -> dict:
 
         chain_parts = []
         for name, level in ancestors:
+            # Skip duplicate adjacent segments (e.g. "Dept of VA > Dept of VA")
+            if chain_parts and chain_parts[-1] == name:
+                continue
             chain_parts.append(name)
             if level == 2:
                 enrichment['sub_agency_name'] = name
@@ -2039,6 +2053,15 @@ def flush_to_db(rec: dict, dry_run: bool = False):
         title = rec.get('fields', {}).get('title') or ''
         slug = _generate_slug(title, notice_id)
         updates['slug'] = slug
+
+    # Fix the "Paris, DC" bug: SAM.gov uses state='DC' for State Dept international
+    # records (Adana, Amman, Athens, etc.). If the stored city isn't Washington but
+    # state is DC, the state is wrong. Clear it.
+    current_city = (rec.get('fields', {}).get('place_of_performance_city') or '').strip()
+    current_state = (rec.get('fields', {}).get('place_of_performance_state') or '').strip()
+    if current_state == 'DC' and current_city and 'washington' not in current_city.lower():
+        updates['place_of_performance_state'] = None
+        log(0, notice_id, f"Cleared bogus DC state for international city: {current_city}")
 
     # Override place of performance with AI-extracted location from PDFs
     # SAM.gov often reports the contracting office, not where the work happens

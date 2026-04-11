@@ -260,11 +260,24 @@ def fix_missing_summaries(batch_size: int = 50, dry_run: bool = False,
             # QC spot-check: every 100th record gets a Sonnet audit
             record_num = batch_start + i
             if record_num % 100 == 0 and progress['summaries_done'] > 0:
-                qc_score = _qc_spot_check(notice_id)
-                if qc_score is not None:
+                qc_result = _qc_spot_check(notice_id, return_full=True)
+                if qc_result is not None:
+                    qc_score = qc_result.get('score', 0)
                     progress.setdefault('qc_scores', []).append(qc_score)
                     avg_qc = sum(progress['qc_scores']) / len(progress['qc_scores'])
                     log(f"QC spot-check #{len(progress['qc_scores'])}: {qc_score}/100 (running avg: {avg_qc:.1f})")
+                    # Log failures to a review file for later analysis
+                    if qc_score < 95:
+                        failure_log = LOG_DIR / 'qc_failures.jsonl'
+                        with failure_log.open('a') as f:
+                            import json as _json
+                            f.write(_json.dumps({
+                                'notice_id': notice_id,
+                                'title': title,
+                                'score': qc_score,
+                                'issues': qc_result.get('issues', []),
+                                'checked_at': datetime.now().isoformat(),
+                            }) + '\n')
 
             # Be gentle
             time.sleep(0.5)
@@ -434,8 +447,8 @@ Return ONLY a JSON object:
 A record that's "the best version of itself" scores 95+. Score <95 means WE made a mistake that could be fixed by running the pipeline again or changing the code."""
 
 
-def _qc_spot_check(notice_id: str) -> int:
-    """Run a Sonnet QC audit on a single record. Returns score 0-100 or None on failure."""
+def _qc_spot_check(notice_id: str, return_full: bool = False):
+    """Run a Sonnet QC audit on a single record. Returns score 0-100 (or full dict if return_full) or None on failure."""
     import urllib.request
 
     CLAUDE_PROXY_URL = os.environ.get('CLAUDE_PROXY_URL', 'http://localhost:3456')
@@ -497,7 +510,7 @@ def _qc_spot_check(notice_id: str) -> int:
                 elif raw[i] == '}': depth -= 1
                 if depth == 0:
                     result = json.loads(raw[start:i+1])
-                    return result.get('score', 80)
+                    return result if return_full else result.get('score', 80)
     except Exception as e:
         log(f"QC spot-check failed for {notice_id[:16]}: {e}")
 
