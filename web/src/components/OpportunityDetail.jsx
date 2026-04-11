@@ -670,6 +670,8 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
   const days = daysUntil(opp.response_deadline)
   const { agency, office: subAgency } = parseAgencyHierarchy(opp.agency_name)
   const [showReport, setShowReport] = useState(false)
+  const [landscape, setLandscape] = useState(null)
+  const [landscapeLoading, setLandscapeLoading] = useState(true)
   const [isSaved, setIsSaved] = useState(false)
   const [savingOpp, setSavingOpp] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -723,6 +725,19 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
         .catch(() => {})
     }
   }, [token, opp.notice_id])
+
+  // Fetch competitive landscape (deterministic, free)
+  useEffect(() => {
+    if (!opp.notice_id) return
+    setLandscapeLoading(true)
+    fetch(`/api/opportunities/${opp.notice_id}/competitive-landscape`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        setLandscape(data)
+        setLandscapeLoading(false)
+      })
+      .catch(() => setLandscapeLoading(false))
+  }, [opp.notice_id])
 
   const handleSave = async () => {
     if (!token) {
@@ -1174,8 +1189,94 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
                   </form>
                 )}
 
+                {landscape && (landscape.incumbent || (landscape.top_recipients && landscape.top_recipients.length > 0)) && (
+                  <div className="card" style={{ marginTop: 16, borderLeft: '3px solid var(--color-navy)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div className="section-title" style={{ margin: 0 }}>Competitive Landscape</div>
+                      <span style={{ background: '#FEF3C7', color: '#92400E', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>BETA</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 14 }}>
+                      {landscape.disclaimer || 'Best-guess analysis from historical contract data.'}
+                    </p>
+
+                    {landscape.incumbent && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                          Likely Incumbent
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700 }}>
+                          {landscape.incumbent.recipient_name || 'Unknown'}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--color-muted)', marginTop: 2 }}>
+                          {landscape.incumbent.location && <span>{landscape.incumbent.location} · </span>}
+                          {landscape.incumbent.award_amount ? (
+                            <span>Prior contract: ${(landscape.incumbent.award_amount / 1e6).toFixed(1)}M</span>
+                          ) : (
+                            <span>Prior contract amount not published</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 4 }}>
+                          Confidence: <strong>{Math.round(landscape.incumbent.confidence * 100)}%</strong>
+                          {' · '}
+                          Match type: {landscape.incumbent.link_type === 'solicitation_exact' ? 'Exact solicitation number match' :
+                                       landscape.incumbent.link_type === 'solicitation_norm' ? 'Solicitation number match' :
+                                       landscape.incumbent.link_type === 'base_piid' ? 'Contract modification chain' :
+                                       'Similar contract (same NAICS, agency, scope)'}
+                        </div>
+                      </div>
+                    )}
+
+                    {landscape.recompete_chain && landscape.recompete_chain.length > 1 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                          Recompete History ({landscape.recompete_chain.length} prior contracts)
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {landscape.recompete_chain.slice(0, 5).map((c, i) => (
+                            <div key={i} style={{ fontSize: 12, padding: '6px 10px', background: 'var(--color-navy-light)', borderRadius: 4 }}>
+                              <strong>{c.recipient}</strong>
+                              {c.amount && <span> — ${(c.amount / 1e6).toFixed(1)}M</span>}
+                              {c.end_date && <span style={{ color: 'var(--color-muted)' }}> · ended {new Date(c.end_date).getFullYear()}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {landscape.top_recipients && landscape.top_recipients.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                          Most Active Bidders · Past 5 Years · {landscape.naics_description || 'This NAICS'}
+                        </div>
+                        <table className="data-table" style={{ fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left' }}>Company</th>
+                              <th style={{ textAlign: 'right' }}>Contracts</th>
+                              <th style={{ textAlign: 'right' }}>Total Awarded</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {landscape.top_recipients.map((r, i) => (
+                              <tr key={i}>
+                                <td>{r.name}</td>
+                                <td style={{ textAlign: 'right' }}>{r.contract_count}</td>
+                                <td style={{ textAlign: 'right' }}>${(r.total_awarded / 1e6).toFixed(1)}M</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    <div className="trust-box" style={{ marginTop: 12, fontSize: 12 }}>
+                      <strong>Want deeper analysis?</strong> The full intelligence report uses AI to analyze bid/no-bid factors, pricing benchmarks, teaming strategy, and risk assessment based on this historical data. {token ? 'Click "Generate Report" above.' : 'Sign in to generate a full report.'}
+                    </div>
+                  </div>
+                )}
+
                 {opp.sam_url_alive !== false ? (
-                  <a href={opp.sam_url || `https://sam.gov/opp/${opp.notice_id}/view`} target="_blank" rel="noopener noreferrer" className="btn btn-navy btn-sm" style={{ alignSelf: 'flex-start' }}>
+                  <a href={opp.sam_url || `https://sam.gov/opp/${opp.notice_id}/view`} target="_blank" rel="noopener noreferrer" className="btn btn-navy btn-sm" style={{ alignSelf: 'flex-start', marginTop: 16 }}>
                     View full solicitation on SAM.gov ↗
                   </a>
                 ) : (

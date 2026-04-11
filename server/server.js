@@ -1418,6 +1418,107 @@ app.get('/api/opportunities/:idOrSlug', async (req, res) => {
   }
 })
 
+// ─── Competitive Landscape (BETA) — deterministic incumbent + top recipients ───
+// Free tier: SQL-only. Paid report generates fuller AI analysis.
+app.get('/api/opportunities/:idOrSlug/competitive-landscape', async (req, res) => {
+  try {
+    const param = req.params.idOrSlug
+    const isNoticeId = /^[a-f0-9]{32}$/.test(param)
+
+    // Resolve to notice_id
+    const idRes = await pool.query(
+      isNoticeId
+        ? 'SELECT notice_id, agency_name, naics_code, naics_description FROM opportunities WHERE notice_id = $1'
+        : 'SELECT notice_id, agency_name, naics_code, naics_description FROM opportunities WHERE slug = $1',
+      [param]
+    )
+    if (!idRes.rows.length) return res.status(404).json({ error: 'Opportunity not found' })
+    const { notice_id, agency_name, naics_code, naics_description } = idRes.rows[0]
+
+    // 1. Incumbent + linked contracts — highest confidence first
+    const incumbentRes = await pool.query(`
+      SELECT l.piid, l.link_type, l.confidence, l.match_reasons,
+             c.recipient_name, c.recipient_uei, c.recipient_city, c.recipient_state,
+             c.award_amount, c.start_date, c.end_date, c.description,
+             c.agency_name AS contract_agency
+      FROM contract_lineage l
+      JOIN contracts c ON c.piid = l.piid
+      WHERE l.notice_id = $1
+      ORDER BY l.confidence DESC, c.end_date DESC NULLS LAST
+      LIMIT 10
+    `, [notice_id])
+
+    // 2. Top recipients in this NAICS + agency over past 5 years
+    const topAgency = (agency_name || '').split(' > ')[0]
+    const topRecipientsRes = naics_code ? await pool.query(`
+      SELECT c.recipient_name, c.recipient_uei,
+             COUNT(*) AS contract_count,
+             SUM(c.award_amount) AS total_awarded,
+             MAX(c.end_date) AS latest_end_date
+      FROM contracts c
+      WHERE c.naics_code = $1
+        AND ($2 = '' OR c.agency_name ILIKE '%' || $2 || '%')
+        AND c.recipient_name IS NOT NULL
+        AND c.start_date >= CURRENT_DATE - INTERVAL '5 years'
+      GROUP BY c.recipient_name, c.recipient_uei
+      ORDER BY SUM(c.award_amount) DESC NULLS LAST
+      LIMIT 8
+    `, [naics_code, topAgency.slice(0, 40)]) : { rows: [] }
+
+    // 3. Derive "incumbent" from the top link
+    let incumbent = null
+    let recompete_chain = []
+    if (incumbentRes.rows.length) {
+      const top = incumbentRes.rows[0]
+      incumbent = {
+        piid: top.piid,
+        recipient_name: top.recipient_name,
+        recipient_uei: top.recipient_uei,
+        location: [top.recipient_city, top.recipient_state].filter(Boolean).join(', ') || null,
+        award_amount: top.award_amount ? parseFloat(top.award_amount) : null,
+        start_date: top.start_date,
+        end_date: top.end_date,
+        confidence: parseFloat(top.confidence),
+        link_type: top.link_type,
+        match_reasons: top.match_reasons,
+      }
+      // Recompete chain = all links in date order
+      recompete_chain = incumbentRes.rows.map(r => ({
+        piid: r.piid,
+        recipient: r.recipient_name,
+        amount: r.award_amount ? parseFloat(r.award_amount) : null,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        confidence: parseFloat(r.confidence),
+      })).sort((a, b) => {
+        if (!a.end_date) return 1
+        if (!b.end_date) return -1
+        return new Date(b.end_date) - new Date(a.end_date)
+      })
+    }
+
+    res.json({
+      is_beta: true,
+      disclaimer: 'Best-guess analysis based on historical USASpending data. For deeper AI-powered competitive analysis, generate the full intelligence report.',
+      naics_code,
+      naics_description,
+      incumbent,
+      recompete_chain,
+      top_recipients: topRecipientsRes.rows.map(r => ({
+        name: r.recipient_name,
+        uei: r.recipient_uei,
+        contract_count: parseInt(r.contract_count),
+        total_awarded: r.total_awarded ? parseFloat(r.total_awarded) : 0,
+        latest_end_date: r.latest_end_date,
+      })),
+      data_window_years: 5,
+    })
+  } catch (e) {
+    console.error('Competitive landscape error:', e)
+    res.status(500).json({ error: isProd ? 'Internal server error' : e.message })
+  }
+})
+
 // ─── Attachment proxy — fetches SAM.gov files server-side so users don't need a login ──
 app.get('/api/proxy/attachment', async (req, res) => {
   const { url } = req.query
