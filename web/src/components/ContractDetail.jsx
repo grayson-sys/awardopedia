@@ -110,7 +110,7 @@ function ReportView({ sections, generatedAt }) {
   )
 }
 
-export default function ContractDetail({ contract, onBack, user, token, onBuyCredits }) {
+export default function ContractDetail({ contract, onBack, user, token, onBuyCredits, onSignIn }) {
   const days = daysLeft(contract.end_date)
   const [report, setReport] = useState(null)
   const [reportLoading, setReportLoading] = useState(false)
@@ -129,7 +129,7 @@ export default function ContractDetail({ contract, onBack, user, token, onBuyCre
 
   async function generateReport() {
     if (!token) {
-      setReportError('Please sign in to generate reports.')
+      onSignIn && onSignIn()
       return
     }
     setReportLoading(true)
@@ -142,7 +142,7 @@ export default function ContractDetail({ contract, onBack, user, token, onBuyCre
       })
       const data = await res.json()
       if (res.status === 402) {
-        setReportError('No credits remaining.')
+        onBuyCredits && onBuyCredits()
         return
       }
       if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')

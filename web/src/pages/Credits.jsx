@@ -1,14 +1,21 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, CreditCard, Zap, Star, Rocket } from 'lucide-react'
-
-const PACK_ICONS = { starter: Zap, pro: Star, power: Rocket }
+import { ArrowLeft, CreditCard } from 'lucide-react'
 
 export default function Credits({ user, token, onBack }) {
   const [packs, setPacks] = useState([])
+  const [selectedPack, setSelectedPack] = useState(null)
   const [credits, setCredits] = useState(user?.credits ?? null)
   const [history, setHistory] = useState([])
   const [purchasing, setPurchasing] = useState(null)
   const [error, setError] = useState(null)
+
+  // When packs load, select the default
+  useEffect(() => {
+    if (packs.length && !selectedPack) {
+      const def = packs.find(p => p.isDefault) || packs[0]
+      setSelectedPack(def.key)
+    }
+  }, [packs])
 
   useEffect(() => {
     fetch('/api/credits/packs').then(r => r.json()).then(setPacks).catch(() => {})
@@ -82,48 +89,57 @@ export default function Credits({ user, token, onBack }) {
         <div style={{ color: 'var(--color-danger)', marginBottom: 16, fontSize: 13 }}>{error}</div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 32 }}>
-        {packs.map(p => {
-          const Icon = PACK_ICONS[p.key] || Zap
-          const isPopular = p.key === 'pro'
-          return (
-            <div
-              key={p.key}
-              className="card"
-              style={{
-                textAlign: 'center',
-                padding: 24,
-                border: isPopular ? '2px solid var(--color-navy)' : undefined,
-                position: 'relative',
-              }}
-            >
-              {isPopular && (
-                <div style={{
-                  position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
-                  background: 'var(--color-navy)', color: '#fff', fontSize: 10, fontWeight: 700,
-                  padding: '2px 10px', borderRadius: 10, textTransform: 'uppercase'
-                }}>
-                  Most Popular
-                </div>
-              )}
-              <Icon size={28} style={{ color: 'var(--color-navy)', marginBottom: 8 }} />
-              <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>{p.price}</div>
-              <div style={{ fontSize: 13, color: 'var(--color-muted)', marginBottom: 4 }}>{p.credits} credits</div>
-              <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 16 }}>
-                ${(parseInt(p.price.replace('$', '')) / p.credits).toFixed(2)}/report
-              </div>
-              <button
-                className={`btn ${isPopular ? 'btn-navy' : 'btn-outline'}`}
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => buyPack(p.key)}
-                disabled={purchasing === p.key}
-              >
-                {purchasing === p.key ? 'Redirecting...' : `Buy ${p.label.split('—')[0].trim()}`}
-              </button>
+      {(() => {
+        const current = packs.find(p => p.key === selectedPack)
+        if (!current) return null
+        const perReport = (current.cents / 100 / current.credits).toFixed(2)
+        return (
+          <div className="card" style={{
+            padding: 32,
+            marginBottom: 32,
+            border: '2px solid var(--color-navy)',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 48, fontWeight: 700, color: 'var(--color-navy)', lineHeight: 1 }}>
+              {current.price}
             </div>
-          )
-        })}
-      </div>
+            <div style={{ fontSize: 16, marginTop: 8, color: 'var(--color-text)' }}>
+              {current.credits} reports · ${perReport}/report
+            </div>
+
+            <div style={{ marginTop: 20 }}>
+              <select
+                value={selectedPack}
+                onChange={e => setSelectedPack(e.target.value)}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: 14,
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 6,
+                  background: 'var(--color-white)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {packs.map(p => (
+                  <option key={p.key} value={p.key}>
+                    {p.price} — {p.credits} reports{p.isDefault ? ' (recommended)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              className="btn btn-navy"
+              style={{ marginTop: 20, padding: '12px 32px', fontSize: 15, justifyContent: 'center' }}
+              onClick={() => buyPack(current.key)}
+              disabled={purchasing === current.key}
+            >
+              {purchasing === current.key ? 'Redirecting to checkout...' : `Buy ${current.credits} report${current.credits > 1 ? 's' : ''} for ${current.price}`}
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Purchase history */}
       {history.length > 0 && (

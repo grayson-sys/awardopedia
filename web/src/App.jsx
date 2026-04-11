@@ -270,6 +270,7 @@ export default function App() {
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem('token') } catch { return null }
   })
+  const [postLoginRedirect, setPostLoginRedirect] = useState(null)
 
   // Restore session on mount
   useEffect(() => {
@@ -283,7 +284,15 @@ export default function App() {
   function handleLogin(member, newToken) {
     setUser(member)
     setToken(newToken)
-    setView('home')
+    // If they came from clicking "Generate Report" and have 0 credits, send to checkout
+    if (postLoginRedirect === 'credits' || (member.credits === 0 && postLoginRedirect)) {
+      setView('credits')
+    } else if (postLoginRedirect === 'opp-detail' && selectedOpp) {
+      setView('opp-detail')
+    } else {
+      setView('home')
+    }
+    setPostLoginRedirect(null)
   }
 
   function handleLogout() {
@@ -1054,6 +1063,7 @@ export default function App() {
           user={user}
           token={token}
           onBuyCredits={() => setView('credits')}
+          onSignIn={() => { setPostLoginRedirect('credits'); setView('auth') }}
           onBack={() => {
             // Go back in history to preserve scroll position and results
             setSelectedContract(null)
@@ -1071,7 +1081,7 @@ export default function App() {
           user={user}
           token={token}
           onBuyCredits={() => setView('credits')}
-          onSignIn={() => setView('auth')}
+          onSignIn={() => { setPostLoginRedirect('credits'); setView('auth') }}
           onHome={goHome}
           onBack={() => {
             // Go back in history to preserve scroll position and results

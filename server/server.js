@@ -42,9 +42,11 @@ const STRIPE_WEBHOOK_SECRET = envVars.STRIPE_WEBHOOK_SECRET || process.env.STRIP
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null
 
 const CREDIT_PACKS = {
-  starter: { priceId: 'price_1TBNL847350RugxrNcVcMsAT', credits: 100, label: 'Starter — 100 credits', cents: 900 },
-  pro:     { priceId: 'price_1TBNL947350RugxrkUlb8rUY', credits: 500, label: 'Pro — 500 credits', cents: 2900 },
-  power:   { priceId: 'price_1TBNL947350Rugxr4ilhHzTv', credits: 2000, label: 'Power — 2,000 credits', cents: 7900 },
+  starter5:    { priceId: 'price_1TKsKf47350RugxrRX7ij74K', credits: 5,   cents: 500,   label: 'Starter — 5 reports' },
+  standard10:  { priceId: 'price_1TKsKf47350Rugxrkzco5ASX', credits: 10,  cents: 1000,  label: 'Standard — 10 reports', isDefault: true },
+  plus20:      { priceId: 'price_1TKsKg47350Rugxr9IuUU3bG', credits: 25,  cents: 2000,  label: 'Plus — 25 reports (5 bonus)' },
+  pro50:       { priceId: 'price_1TKsKh47350RugxrCyX1jHuV', credits: 60,  cents: 5000,  label: 'Pro — 60 reports (10 bonus)' },
+  power100:    { priceId: 'price_1TKsKi47350Rugxro2g1nrfb', credits: 130, cents: 10000, label: 'Power — 130 reports (30 bonus)' },
 }
 
 const pool = new pg.Pool({
@@ -278,8 +280,8 @@ app.post('/api/feedback', express.json(), async (req, res) => {
 
 const JWT_SECRET = envVars.JWT_SECRET || process.env.JWT_SECRET || 'dev-secret-change-in-prod'
 const CREDITS_PER_REPORT = 1
-const REPORT_PRICE_CENTS = 500  // $5 per report
-const MIN_CREDIT_BUY = 4        // $20 minimum = 4 credits
+const REPORT_PRICE_CENTS = 100  // $1 per report
+const MIN_CREDIT_BUY = 5        // $5 minimum = 5 credits
 
 function hashPassword(pw) { return createHash('sha256').update(pw + JWT_SECRET).digest('hex') }
 
@@ -807,7 +809,12 @@ app.get('/api/credits', authMiddleware, async (req, res) => {
 // ─── Credits: get available packs ────────────────────────
 app.get('/api/credits/packs', (req, res) => {
   const packs = Object.entries(CREDIT_PACKS).map(([key, p]) => ({
-    key, label: p.label, credits: p.credits, price: `$${(p.cents / 100).toFixed(0)}`
+    key,
+    label: p.label,
+    credits: p.credits,
+    cents: p.cents,
+    price: `$${(p.cents / 100).toFixed(0)}`,
+    isDefault: !!p.isDefault,
   }))
   res.json(packs)
 })

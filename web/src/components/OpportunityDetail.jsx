@@ -314,19 +314,26 @@ function ReportModal({ opp, onClose, token, onSignIn, onHome }) {
   }, [status])
 
   async function startGeneration(force = false) {
+    if (!token) {
+      onSignIn && onSignIn()
+      return
+    }
     setStatus('generating')
     setElapsed(0)
     setError(null)
     try {
-      const endpoint = token ? '/api/member/reports/generate-opportunity' : '/api/reports/generate-opportunity-dev'
-      const headers = { 'Content-Type': 'application/json' }
-      if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/member/reports/generate-opportunity', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notice_id: opp.notice_id, force })
       })
       const data = await res.json()
+      // 402 = insufficient credits — bounce to credits page
+      if (res.status === 402) {
+        setStatus('idle')
+        onBuyCredits && onBuyCredits()
+        return
+      }
       if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
       const sections = typeof data.sections === 'string' ? JSON.parse(data.sections) : data.sections
       setReport({ ...data, sections })
