@@ -53,6 +53,7 @@ def main():
     args = parser.parse_args()
 
     conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True  # set before any queries
     cur = conn.cursor()
 
     # Find expired opportunities that have static pages
@@ -100,8 +101,7 @@ def main():
             local_path.unlink()
             deleted_local += 1
 
-        # Clear the flag in DB
-        conn.autocommit = True
+        # Clear the flag in DB (autocommit already on)
         cur.execute("""
             UPDATE opportunities
             SET report_generated = false, report_url = NULL
