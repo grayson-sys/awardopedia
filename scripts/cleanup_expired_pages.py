@@ -111,6 +111,27 @@ def main():
     conn.close()
     print(f"Cleaned up: {deleted_cdn} from CDN, {deleted_local} local files")
 
+    # ── Clean up local PDFs for expired opportunities ────────────────────
+    # Text has already been extracted and stored in the DB. No need to keep
+    # the PDFs on disk after the record expires.
+    import shutil
+    pdf_base = Path(__file__).parent.parent / 'data' / 'pdfs'
+    if pdf_base.exists():
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT notice_id FROM opportunities WHERE response_deadline < CURRENT_DATE")
+        expired_ids = set(r[0] for r in cur.fetchall())
+        conn.close()
+
+        pdf_deleted = 0
+        for d in pdf_base.iterdir():
+            if d.is_dir() and d.name in expired_ids:
+                shutil.rmtree(d)
+                pdf_deleted += 1
+        if pdf_deleted:
+            print(f"Cleaned up {pdf_deleted} expired PDF directories")
+
 
 if __name__ == '__main__':
     main()
