@@ -775,13 +775,33 @@ export default function OpportunityDetail({ opp, onBack, user, token, onBuyCredi
               <ArrowLeft size={14} /> Back to opportunities
             </button>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button
-                className={`btn ${editing ? 'btn-navy' : 'btn-ghost'}`}
-                onClick={() => editing ? setEditing(false) : startEditing()}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
-              >
-                ✏️ {editing ? 'Cancel editing' : 'Edit this record'}
-              </button>
+              {editing ? (
+                <>
+                  <button
+                    className="btn btn-navy"
+                    onClick={submitEdit}
+                    disabled={!hasEditChanges && !editExplanation.trim()}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                  >
+                    Submit {hasEditChanges ? `(${Object.keys(editChanged).length} changed)` : 'edit'}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setEditing(false)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn btn-ghost"
+                  onClick={startEditing}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                >
+                  ✏️ Edit this record
+                </button>
+              )}
               <ShareButton opp={opp} />
               <button
                 className={`btn ${isSaved ? 'btn-amber' : 'btn-ghost'}`}
