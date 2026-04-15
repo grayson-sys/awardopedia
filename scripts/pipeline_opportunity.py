@@ -2218,7 +2218,7 @@ STAGE_FUNCTIONS = {
     7:  stage_7_enrichment,
     8:  stage_8_congressional,
     9:  stage_9_link_check,
-    # 10: stage_10_static_page,  # DISABLED — template needs SEO fixes before bulk generation
+    10: stage_10_static_page,  # Re-enabled: SEO template fixed (slug URLs, share buttons, deadline)
     # 11, 12: handled separately in run_pipeline (batch operations, not per-record)
 }
 

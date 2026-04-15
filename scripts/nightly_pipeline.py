@@ -125,7 +125,7 @@ def main():
     # No limit — process every new record SAM.gov gave us
     pipeline_cmd = [
         'python3', str(scripts_dir / 'pipeline_opportunity.py'),
-        '--stage', '1-9',  # Stages 1-9 per-record (Stage 10 disabled until SEO template is fixed)
+        '--stage', '1-10',  # Stages 1-10 per-record (includes static page generation)
     ]
     pipeline_ok = run_cmd(pipeline_cmd, "Full pipeline (stages 1-9, all needed records)")
 
