@@ -1,6 +1,121 @@
-# HANDOFF — Awardopedia Session 2026-03-18
-Last updated: 2026-03-18 ~10pm MDT
-Written by: MagnumHilux (OpenClaw)
+# HANDOFF — Awardopedia
+**Last updated:** 2026-04-20
+**Written by:** Claude Opus 4.6 session (April 8-20)
+**Previous:** MagnumHilux (OpenClaw) session 2026-03-18
+**Status:** Fully operational. All pipelines running nightly. No blockers.
+
+---
+
+## What Was Built (April 8-20)
+
+Full data pipeline infrastructure from partially-ingested DB to fully automated system:
+
+1. **12-stage opportunity pipeline** — stages 1-10 per-record + stage 11 award matching + stage 12 winner enrichment
+2. **USASpending contract pipeline** — independent nightly ingest with 5-year retention
+3. **Lineage linker** — deterministic matching of opportunities to contracts for incumbent/competitive intel
+4. **Static SEO pages** — 6,500+ pages with slug URLs, share buttons, uploaded to DO Spaces CDN
+5. **Competitive Landscape BETA** — free deterministic incumbent analysis on every opportunity page
+6. **$1/report pricing** — Stripe integration with 5 credit packs ($5-$100), Anthropic API key for report generation
+7. **Data quality** — QC scoring at 94% average, fair grading prompt, failure logging
+8. **Search filters** — deadline dropdown, human-readable set-aside dropdown, non-biddable types filtered out
+9. **Agency name normalization** — "Department of X" → "X Department" in frontend, guarded in pipeline
+10. **Edit this record** — inline editing in main content area with submit/cancel in top bar
+
+## Current State
+
+### Database (DigitalOcean PostgreSQL)
+- **~40,400 opportunities** (~4,500 open biddable)
+- **~142K contracts** (5-year rolling window from USASpending)
+- **2,693 lineage links** (contract ↔ opportunity matches)
+- **0 biddable open records missing summaries** — fully caught up
+- **6,500+ static SEO pages** generated and on CDN
+
+### Cron Jobs (all times Mountain)
+| Time | Script | What it does |
+|------|--------|-------------|
+| 10:00 PM | `nightly_pipeline.py` | Step 0: cleanup expired pages + PDFs. Step 1: fetch SAM.gov. Step 2: stages 1-10 on all needed records. Step 3: stage 11 award matching. Step 4: stage 12 winner enrichment. |
+| 10:30 PM | `backfill_pipeline.py` | Catches anything nightly missed. Biddable open records only. QC spot-checks every 100th. |
+| 2:00 AM | `usaspending_nightly.py` | Delta ingest of contracts modified in past 30 days. Prunes contracts >5 years. |
+| 3:00 AM | `lineage_linker.py` | 4-pass deterministic matching: exact sol#, normalized sol#, base PIID chains, fuzzy scoring. |
+
+### Pipeline Stages (pipeline_opportunity.py)
+1. **Ingest** — SAM.gov API → DB
+2. **Download PDFs** — SAM.gov v3 resources API
+3. **Classify docs** — SF-1449, SOW, Wage Det, etc.
+4. **Deterministic extract** — regex on correct doc types
+5. **AI extract** — Claude fills NULLs + title-based location check when no PDFs
+6. **AI summary** — Sonnet for solicitations, Haiku for awards. Writes `summary_model`.
+7. **Enrichment** — NAICS/PSC lookups (auto-fetch missing codes), agency tree, office codes
+8. **Congressional** — ZIP → district → rep website
+9. **Link check** — verify SAM.gov URL alive
+10. **Static pages** — SEO HTML with slug URLs, uploaded to DO Spaces
+11. **Award matching** — batch: Award Notices → parent solicitations, copy winner/$$
+12. **Winner enrichment** — batch: upsert winners into recipients, YFinance/AI briefs
+
+### Key Decisions
+- **Only biddable types get full enrichment**: Combined Synopsis, Solicitation, Presolicitation, Sale of Surplus. Award Notices → Stage 11 only. Sources Sought / Special Notice / Justification skipped.
+- **Only open records** (deadline >= today) processed. No AI on expired records.
+- **Agency names**: DB stores "Department of X > Sub-agency". Frontend flips to "X Department" via agencyNorm.js. Pipeline guards refuse to write raw ALL CAPS or literal 'name'.
+- **Slug URLs**: `opportunity/frazier-mountain-road-paving-6b7cf1ef` in `slug` column. Old hash URLs redirect.
+- **DNS hardcoded**: `165.227.209.1` in `/etc/hosts` for DB hostname.
+- **PDFs cleaned nightly**: expired PDFs deleted. Text already in DB.
+- **OAuth proxy** at `localhost:3456` for pipeline AI (free). Real Anthropic API key for paid reports only.
+
+### Stripe Credit Packs
+| Pack | Price | Credits |
+|------|-------|---------|
+| Starter | $5 | 5 |
+| Standard (default) | $10 | 10 |
+| Plus | $20 | 25 |
+| Pro | $50 | 60 |
+| Power | $100 | 130 |
+
+1 credit = 1 report. Reports cached 90 days.
+
+### Known Issues
+- **USASpending API** DNS-fails intermittently from Mac mini. `/etc/hosts` fix only covers DB hostname.
+- **Competitive Landscape** BETA — fuzzy matching can produce false positives at 0.60 confidence.
+- **Static page template** doesn't include Competitive Landscape section yet.
+
+### Files That Matter
+| File | Purpose |
+|------|---------|
+| `scripts/pipeline_opportunity.py` | Main 12-stage pipeline (~3,000 lines) |
+| `scripts/pipeline_contract.py` | USASpending contract enrichment |
+| `scripts/nightly_pipeline.py` | Nightly orchestrator |
+| `scripts/backfill_pipeline.py` | Catch-up enrichment + QC |
+| `scripts/usaspending_nightly.py` | Delta USASpending ingest |
+| `scripts/lineage_linker.py` | Contract ↔ opportunity matching |
+| `scripts/generate_static.py` | SEO static HTML generation |
+| `scripts/cleanup_expired_pages.py` | Nightly cleanup expired pages + PDFs |
+| `scripts/reenrich_worker.py` | Parallel re-enrichment of old records |
+| `server/server.js` | Express API (deployed on DO App Platform) |
+| `web/src/components/OpportunityDetail.jsx` | Main opportunity detail page |
+| `web/src/utils/agencyNorm.js` | Frontend agency name flip |
+
+### Credentials (in .env)
+- `DATABASE_URL` — DigitalOcean PostgreSQL (awardopedia_user)
+- `ADMIN_DATABASE_URL` — doadmin for migrations
+- `SAM_API_KEY` — 10 calls/day
+- `ANTHROPIC_API_KEY` — paid report generation
+- `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
+- `DO_SPACES_*` — CDN for static pages
+- GitHub token in git remote URL
+
+### Memory System
+Project memories: `~/.claude/projects/-Users-openclaw-awardopedia/memory/`
+Bot house rules: `/Users/magnumhilux/bot_rules/BOT_HOUSE_RULES.md`
+
+### What's Next
+- Monitor pipelines nightly — `logs/nightly.log`
+- End-to-end test a real Stripe payment → report generation
+- Add Competitive Landscape data to static page template
+- Consider parallelizing pipeline if daily ingest grows
+- Iterate on QC failures logged at `logs/qc_failures.jsonl`
+
+---
+
+## Previous Session Notes (2026-03-18)
 
 ---
 
